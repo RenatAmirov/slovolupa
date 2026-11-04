@@ -27,6 +27,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .heading { flex: 1; min-width: 0; } .heading strong { display: block; font-size: 14px; letter-spacing: -.2px; } .eyebrow { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #73857b; }
 .close { width: 30px; height: 30px; border-radius: 8px; background: transparent; font-size: 22px; line-height: 1; color: #6f7f77; } .close:hover { background: #eaf0eb; }
 .summary { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 18px 12px; } .pill { padding: 3px 8px; background: #edf2ed; color: #52665b; border-radius: 5px; font-size: 11px; }
+.summary-bottom { flex: 0 0 auto; padding: 8px 18px; border-top: 1px solid #e4e9e3; }
 .tabs { padding: 0 18px; display: flex; flex-wrap: wrap; gap: 0 18px; border-bottom: 1px solid #e4e9e3; flex: 0 0 auto; } .tab { padding: 8px 0; background: transparent; font-size: 12px; border-bottom: 2px solid transparent; color: #78877d; } .tab[aria-selected=true] { border-color: #26654c; color: #20573f; font-weight: 650; }
 .body { padding: 18px; min-height: 0; overflow: auto; overscroll-behavior: contain; flex: 1 1 auto; scrollbar-width: thin; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 10px; color: #75847b; margin-bottom: 14px; align-items: center; } .legend b { font-size: 14px; color: #255c43; } .water-toggle { margin-left: auto; border-radius: 5px; background: #eaf0e9; padding: 4px 8px; font-size: 10px; } .water-toggle[aria-pressed=true] { background: #f9e9cd; color: #8b5b17; }
@@ -154,7 +155,13 @@ export class Lens {
     else if (this.tab === 'stats') this.renderStats(body);
     else this.renderFrequency(body);
     const footer = el('div', 'footer'); footer.append(el('span', 'local', '● Анализ на устройстве'), el('span', '', 'Snowball · RU / EN'));
-    this.panel.append(header, summary, tabs, body, footer);
+    this.panel.append(header, tabs, body, footer);
+    if (this.mode === 'selection') {
+      summary.classList.add('summary-bottom');
+      footer.before(summary);
+    } else {
+      header.after(summary);
+    }
   }
   renderMap(body) {
     let output;

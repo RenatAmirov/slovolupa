@@ -139,6 +139,11 @@ try {
     await assertBounds();
     assert.ok((await overlay.locator('.text').textContent()) === selectedLongText, 'Длинное выделение должно сохраняться целиком');
     assert.ok(await overlay.locator('.body').evaluate((node) => node.scrollHeight > node.clientHeight));
+    const summary = overlay.locator('.summary');
+    assert.deepEqual(await summary.locator('.pill').allTextContents(), ['2800 слов', '0% воды', 'RU']);
+    const summaryBox = await summary.boundingBox();
+    const bodyBox = await overlay.locator('.body').boundingBox();
+    assert.ok(summaryBox.y >= bodyBox.y + bodyBox.height - 1);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(() => { document.getElementById('long').remove(); window.scrollTo(0, 0); });
   });
