@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Словолупа · демонстрация</title>
+  <style>
+    * { box-sizing: border-box; } body { background: #f6f7f0; color: #284432; margin: 0; font-family: system-ui, sans-serif; } .page { max-width: 1040px; padding: 44px 40px 90px; margin: auto; } nav { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #dce2d2; padding-bottom: 22px; } .brand { font-weight: 650; font-size: 19px; letter-spacing: -.6px; } .badge { font-size: 10px; color: #758369; letter-spacing: 1.5px; } .intro { padding: 55px 0 37px; } .eyebrow { color: #7c896e; font-size: 10px; letter-spacing: 2px; } h1 { font: 48px/1.15 Georgia, serif; font-weight: 400; max-width: 650px; margin: 15px 0; letter-spacing: -1.5px; } .subtitle { font-size: 14px; color: #7f8a74; max-width: 600px; line-height: 1.8; } .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; } article { border: 1px solid #dce3d0; border-radius: 14px; padding: 26px; background: #fdfef8; } article h2 { font-size: 11px; color: #7c896e; letter-spacing: 1px; font-weight: 500; margin: 0 0 16px; } article p, article div.sample { font: 18px/1.9 Georgia, serif; margin: 0; color: #415039; } .bottom { margin-top: 24px; padding: 24px 26px; background: #e9efdf; border-radius: 12px; } .bottom h2 { font-size: 15px; margin: 0 0 8px; } .bottom p { font-size: 12px; line-height: 1.8; color: #7a866c; margin: 0; } .sample { margin-top: 20px; } .test-input { margin-top: 28px; font-size: 12px; color: #7a866c; } textarea { display: block; margin-top: 10px; width: 100%; padding: 12px; border: 1px solid #dce3d0; border-radius: 8px; background: #fdfef8; font: inherit; } footer { margin-top: 30px; font-size: 10px; color: #8c957e; } @media(max-width: 700px) { .grid { grid-template-columns: 1fr; } .page { padding: 25px 20px; } h1 { font-size: 36px; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <nav><span class="brand">▥ Словолупа</span><span class="badge">ЛОКАЛЬНО · RU / EN</span></nav>
+    <div class="intro"><span class="eyebrow">ТЕКСТ ПОД УВЕЛИЧЕНИЕМ</span><h1>Слова повторяются.<br>Теперь это видно.</h1><div class="subtitle">Щёлкните по абзацу или выделите несколько предложений. Размер и насыщенность слов покажут частоту их употребления.</div></div>
+    <div class="grid">
+      <article><h2>01 / РУССКИЙ ТЕКСТ</h2><p id="russian" tabindex="0">Хороший текст начинается с мысли. Мысль становится яснее, когда в тексте есть ритм. Редактор читает текст, замечает повторы и возвращается к мысли. Ах, как часто мы повторяем слова! Но слова, словом и словами можно говорить об одном — и всё же находить новый смысл.</p></article>
+      <article><h2>02 / ENGLISH TEXT</h2><p id="english" tabindex="0">Good writing starts with a clear idea. A writer writes, then rewrites: the idea becomes clearer. Readers read for meaning, and thoughtful reading makes the meaning visible. Oh, we all repeat words — but words can help an idea grow. Writing is a way to think.</p></article>
+    </div>
+    <section class="bottom"><h2>Смысл — крупнее. Служебные слова — тише.</h2><p>Словоформы объединяются алгоритмом Snowball. Местоимения, междометия и стоп-слова учитываются в водности. Пунктуация и порядок слов сохраняются. Всё работает на вашем устройстве.</p></section>
+    <article class="sample"><h2>03 / СМЕШАННЫЙ ТЕКСТ И ПУНКТУАЦИЯ</h2><div id="mixed" class="sample">Текст, тексты, текстом… Text, texts, texting! «Ёлка» и елки — trees, trees; really? Да: 42, 3.14 — числа тоже остаются.</div></article>
+    <div class="test-input"><label for="private-text">В полях ввода автоматический анализ отключён, чтобы не мешать редактированию.</label><textarea id="private-text" rows="2">Этот текст в поле ввода не должен вызывать окно.</textarea></div>
+    <footer>Демонстрация работает без установки расширения. На других сайтах установите папку extension в Chrome.</footer>
+  </main>
+  <script src="/extension/content.js"></script>
+</body>
+</html>

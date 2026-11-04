@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Словолупа — настройки</title>
+  <style>
+    * { box-sizing: border-box; } body { margin: 0; width: 330px; background: #f8faf6; color: #254737; font: 13px/1.5 system-ui, sans-serif; }
+    header { padding: 23px 24px 18px; border-bottom: 1px solid #e1e8dc; } .label { font-size: 10px; letter-spacing: 1.6px; color: #829078; } h1 { font-size: 24px; margin: 5px 0 3px; letter-spacing: -.8px; font-weight: 600; } p { color: #7a8773; font-size: 12px; margin: 0; }
+    main { padding: 8px 24px 20px; } .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 0; border-bottom: 1px solid #e6ebdf; cursor: pointer; } .row strong { display: block; font-size: 12px; font-weight: 600; } .row span { font-size: 10px; color: #839079; }
+    input[type=checkbox] { appearance: none; width: 33px; min-width: 33px; height: 20px; margin: 0; background: #d2dccc; border-radius: 12px; cursor: pointer; position: relative; } input[type=checkbox]:checked { background: #2b654a; } input[type=checkbox]::before { content: ''; position: absolute; left: 3px; top: 3px; width: 14px; height: 14px; background: white; border-radius: 50%; } input[type=checkbox]:checked::before { transform: translateX(13px); }
+    input:focus-visible { outline: 2px solid #34674c; outline-offset: 3px; } .instructions { margin-top: 10px; font-size: 11px; color: #7d8975; } kbd { background: #ebf0e5; padding: 1px 4px; border-radius: 3px; font: inherit; }
+    footer { padding: 12px 24px; border-top: 1px solid #e1e8dc; font-size: 10px; display: flex; justify-content: space-between; color: #829078; } #status { color: #356749; min-height: 15px; font-size: 10px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header><div class="label">ЧАСТОТНАЯ КАРТА ТЕКСТА</div><h1>Словолупа</h1><p>Читайте текст. Замечайте повторы.</p></header>
+  <main>
+    <label class="row"><div><strong>Расширение включено</strong><span>Для открытых веб-страниц</span></div><input id="enabled" type="checkbox" aria-label="Включить расширение"></label>
+    <label class="row"><div><strong>Подсветка воды</strong><span>Местоимения, междометия, стоп-слова</span></div><input id="highlightWater" type="checkbox" aria-label="Подсветка воды"></label>
+    <p class="instructions">Щёлкните по абзацу или выделите текст мышью. <kbd>Esc</kbd> закрывает окно.</p>
+    <div id="status" role="status" aria-live="polite"></div>
+    <a href="pdf.html" target="_blank" rel="noopener" style="display:block;padding:9px 12px;background:#e5eee3;border-radius:7px;color:#254737;font-weight:600;text-decoration:none">Открыть PDF ↗</a>
+  </main>
+  <footer><span>● Текст остаётся на устройстве</span><span>RU / EN</span></footer>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "word-lens-extension",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Локальная частотная карта текста для Chrome, RU / EN",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/analyzer.test.cjs",
+    "test:browser": "node tests/browser.mjs",
+    "check": "npm run build && npm test && npm run test:browser",
+    "demo": "node scripts/serve.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "5.3.0",
+    "pdfjs-dist": "6.5.438",
+    "snowball-stemmers": "0.6.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "playwright": "1.64.1"
+  }
+}
