@@ -217,6 +217,34 @@ try {
       const map = reader.locator('word-lens-overlay .text');
       await map.waitFor();
       assert.equal(await map.locator('[data-root="текст"][data-count="3"]').count(), 3);
+      await reader.keyboard.press('Escape');
+      await check('DjVu сохраняет оригинал страниц и поддерживает анализ встроенного текста', async () => {
+        const assets = path.resolve('node_modules/djvujs-dist/library/assets');
+        await reader.locator('#file').setInputFiles(path.join(assets, 'DjVu3Spec_5-10.djvu'));
+        const status = reader.getByRole('status').filter({ hasText: 'страниц с текстом:' });
+        await status.waitFor({ timeout: 15000 });
+        assert.equal(await reader.locator('#document section').count(), 6);
+        const preview = reader.getByRole('img', { name: 'Оригинал страницы 1', exact: true });
+        await preview.waitFor({ timeout: 15000 });
+        assert.ok(await preview.evaluate((canvas) => {
+          const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+          return data.some((value, index) => index % 4 === 0 && value < 180);
+        }), 'В оригинале DjVu видны элементы страницы');
+        await reader.screenshot({ path: 'test-results/djvu-preview.png' });
+        const paragraph = reader.locator('#document section p').filter({ hasText: /[A-Za-z]{3}/ }).first();
+        const original = await paragraph.textContent();
+        await paragraph.click();
+        await map.waitFor();
+        assert.equal(await map.textContent(), original);
+        await reader.keyboard.press('Escape');
+
+        await reader.locator('#file').setInputFiles(path.join(assets, 'boy_jb2_rotate90.djvu'));
+        await reader.getByRole('status').filter({ hasText: 'текстовый слой не найден' }).waitFor();
+        await preview.waitFor();
+        assert.equal(await reader.locator('#document section').count(), 1);
+        assert.equal(await reader.locator('#document p').count(), 0);
+        assert.ok(await preview.evaluate((canvas) => canvas.width > 0 && canvas.height > 0));
+      });
       await reader.close();
     });
     await popup.close(); await manager.close();

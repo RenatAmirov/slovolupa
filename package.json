@@ -12,7 +12,9 @@
   },
   "dependencies": {
     "@fontsource-variable/manrope": "5.3.0",
+    "djvujs-dist": "0.5.4",
     "pdfjs-dist": "6.5.438",
+    "pngjs": "5.0.0",
     "snowball-stemmers": "0.6.0"
   },
   "devDependencies": {

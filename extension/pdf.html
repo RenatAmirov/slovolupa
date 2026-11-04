@@ -2,7 +2,7 @@
 <html lang="ru">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Словолупа · PDF</title>
+<title>Словолупа · PDF и DjVu</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; color: #254737; background: #f2f5ee; font: 15px/1.6 system-ui, sans-serif; }
@@ -24,14 +24,14 @@
   [role=status] { overflow-wrap: anywhere; color: #536759; }
 </style>
 <header>
-  <h1>Словолупа · PDF</h1>
-  <p>Откройте PDF, чтобы увидеть оригинальные страницы и текст для анализа. Щёлкните по абзацу в текстовой колонке или выделите текст мышью. Файл обрабатывается на вашем устройстве.</p>
-  <label for="file">Файл PDF</label>
-  <input id="file" type="file" accept=".pdf,application/pdf" disabled>
+  <h1>Словолупа · PDF и DjVu</h1>
+  <p>Откройте документ, чтобы увидеть оригинальные страницы и текст для анализа. Щёлкните по абзацу в текстовой колонке или выделите текст мышью. Файл обрабатывается на вашем устройстве.</p>
+  <label for="file">Файл PDF или DjVu</label>
+  <input id="file" type="file" accept=".pdf,.djvu,.djv,application/pdf,image/vnd.djvu,image/x-djvu" disabled>
 </header>
 <main>
   <div id="status" role="status">Выберите файл, чтобы открыть его в режиме чтения.</div>
-  <article id="document" aria-label="Текст PDF"></article>
+  <article id="document" aria-label="Страницы документа"></article>
 </main>
 <script src="content.js"></script>
 <script type="module" src="pdf-reader.mjs"></script>

@@ -6,7 +6,29 @@ await build({ entryPoints: { content: 'src/content.js', popup: 'src/popup.js' },
 await copyFile('node_modules/@fontsource-variable/manrope/LICENSE', 'extension/Manrope-LICENSE.txt');
 await copyFile('src/popup.html', 'extension/popup.html');
 await mkdir('extension/pdfjs', { recursive: true });
-for (const file of ['pdf.html', 'pdf-reader.mjs']) await copyFile(`src/${file}`, `extension/${file}`);
+for (const file of ['pdf.html', 'pdf-reader.mjs', 'djvu-reader.mjs']) await copyFile(`src/${file}`, `extension/${file}`);
+await build({
+  entryPoints: ['src/djvu-worker.mjs'], outfile: 'extension/djvu-worker.js',
+  bundle: true, minify: true, target: 'chrome111', legalComments: 'eof',
+});
+
+// Keep the decoder's corresponding source and notices with the installable bundle.
+const djvuSource = 'extension/djvu-source';
+await cp('node_modules/djvujs-dist/library/src', `${djvuSource}/djvujs-dist/library/src`, { recursive: true });
+for (const notice of ['LICENSE.md', 'GNU_GPL_v2']) {
+  await copyFile(`node_modules/djvujs-dist/${notice}`, `${djvuSource}/djvujs-dist/${notice}`);
+}
+await cp('node_modules/pngjs/lib', `${djvuSource}/pngjs/lib`, { recursive: true });
+for (const file of ['browser.js', 'LICENSE']) await copyFile(`node_modules/pngjs/${file}`, `${djvuSource}/pngjs/${file}`);
+await copyFile('src/djvu-worker.mjs', `${djvuSource}/djvu-worker.mjs`);
+await writeFile(`${djvuSource}/README.txt`, [
+  'DjVu decoder source for Slovolupa',
+  'Upstream DjVu.js 0.5.4: https://github.com/RussCoder/djvujs/tree/d068f46a6935e7bef57206e26396f988774d4be6',
+  'Upstream PNGJS 5.0.0: https://github.com/pngjs/pngjs/tree/v5.0.0',
+  'From this directory, rebuild the bundled worker with:',
+  'npx esbuild@0.25.12 djvu-worker.mjs --bundle --minify --target=chrome111 --legal-comments=eof --alias:djvujs-dist=./djvujs-dist --alias:pngjs/browser=./pngjs/browser.js --outfile=../djvu-worker.js',
+  '',
+].join('\n'));
 for (const file of ['pdf.min.mjs', 'pdf.worker.min.mjs']) await copyFile(`node_modules/pdfjs-dist/legacy/build/${file}`, `extension/pdfjs/${file}`);
 await copyFile('node_modules/pdfjs-dist/LICENSE', 'extension/pdfjs/LICENSE');
 for (const directory of ['cmaps', 'standard_fonts', 'wasm', 'iccs']) {
