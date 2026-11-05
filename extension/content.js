@@ -42,7 +42,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .legend-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .legend-actions .water-toggle { margin-left: 0; }
 .explain-button { border-radius: 5px; background: #dcebdc; color: #20573f; padding: 4px 8px; font-size: 10px; }
-.explanation { padding: 0; width: min(760px, calc(100% - 24px)); max-height: calc(100dvh - 24px); margin: auto; border: 1px solid #d8e1db; border-radius: 14px; background: #fbfcfa; color: #193b33; font: 15px/1.65 system-ui, sans-serif; }
+.explanation { position: fixed; inset: 10px auto 10px 10px; width: calc(50vw - 20px); max-width: none; max-height: none; margin: 0; padding: 0; border: 1px solid #d8e1db; border-radius: 14px; background: #fbfcfa; color: #193b33; font: 15px/1.65 system-ui, sans-serif; }
 .explanation[open] { display: flex; flex-direction: column; }
 .explanation::backdrop { background: #152b24aa; }
 .explanation .header { border-bottom: 1px solid #e4e9e3; }
