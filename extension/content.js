@@ -47,7 +47,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .explanation::backdrop { background: #152b24aa; }
 .explanation .header { border-bottom: 1px solid #e4e9e3; }
 .explanation h2 { flex: 1; margin: 0; font-size: 18px; }
-.explanation-body { padding: 16px 18px; overflow: auto; overscroll-behavior: contain; }
+.explanation-body { flex: 1 1 auto; min-height: 0; padding: 16px 18px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
 .explanation-text { overflow-wrap: anywhere; }
 .explanation-text > :first-child { margin-top: 0; } .explanation-text > :last-child { margin-bottom: 0; }
 .explanation-text h1, .explanation-text h2, .explanation-text h3 { line-height: 1.25; color: #174b3e; } .explanation-text h1 { font-size: 1.45em; } .explanation-text h2 { font-size: 1.22em; } .explanation-text h3 { font-size: 1.08em; }

@@ -188,7 +188,7 @@ try {
         extensionId: id,
         generate: async (prompt) => {
           requestPrompt = prompt;
-          return '## Пример объяснения\n\n**Ответ для восьмого класса.** <b>Этот тег — текст.</b>';
+          return `## Пример объяснения\n\n**Ответ для восьмого класса.** <b>Этот тег — текст.</b>\n\n${'Длинное пояснение для проверки прокрутки. '.repeat(500)}`;
         },
       });
       await new Promise((resolve, reject) => {
@@ -213,6 +213,9 @@ try {
         assert.match(await output.textContent(), /<b>Этот тег — текст\.<\/b>/u);
         const dialogBox = await dialog.boundingBox();
         assert.ok(dialogBox.x >= 9 && dialogBox.x + dialogBox.width <= 640, JSON.stringify(dialogBox));
+        const explanationBody = dialog.locator('.explanation-body');
+        assert.equal(await explanationBody.evaluate((node) => getComputedStyle(node).overflowY), 'auto');
+        assert.ok(await explanationBody.evaluate((node) => node.scrollHeight > node.clientHeight));
         await page.keyboard.press('Escape');
         await dialog.waitFor({ state: 'hidden' });
         assert.ok(await panel.isVisible());
