@@ -21,6 +21,9 @@ const CSS = `
 button { font: inherit; cursor: pointer; border: 0; color: inherit; }
 button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; outline-offset: -3px; }
 .header { display: flex; align-items: center; gap: 10px; padding: 16px 18px 10px; flex: 0 0 auto; }
+.header-selection { gap: 8px; padding: 4px 12px; }
+.header-selection .heading { line-height: 1.15; }
+.header-selection .eyebrow { display: block; }
 .logo { width: 30px; height: 30px; display: flex; gap: 3px; align-items: end; justify-content: center; padding: 7px; background: #174b3e; border-radius: 9px; }
 .logo i { display: block; width: 4px; background: #d4efd7; border-radius: 1px; height: 8px; }
 .logo i:nth-child(2) { height: 17px; } .logo i:nth-child(3) { height: 12px; }
@@ -158,6 +161,7 @@ export class Lens {
     else this.renderFrequency(body);
     const footer = el('div', 'footer'); footer.append(el('span', 'local', '● Анализ на устройстве'), el('span', '', 'Snowball · RU / EN'));
     if (this.mode === 'selection') {
+      header.classList.add('header-selection');
       tabs.classList.add('tabs-bottom');
       summary.classList.add('summary-bottom');
       this.panel.append(header, body, tabs, summary, footer);
