@@ -40,12 +40,13 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .legend-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .legend-actions .water-toggle { margin-left: 0; }
 .explain-button { border-radius: 5px; background: #dcebdc; color: #20573f; padding: 4px 8px; font-size: 10px; }
-.explanation { position: fixed; inset: 10px auto 10px 10px; width: calc(50vw - 20px); max-width: none; max-height: none; margin: 0; padding: 0; border: 1px solid #d8e1db; border-radius: 14px; background: #fbfcfa; color: #193b33; font: 15px/1.65 system-ui, sans-serif; }
+.explanation { position: fixed; inset: 10px auto auto 10px; width: calc(50vw - 20px); height: calc(100dvh - 20px); max-width: none; max-height: none; margin: 0; padding: 0; border: 1px solid #d8e1db; border-radius: 14px; background: #fbfcfa; color: #193b33; font: 15px/1.65 system-ui, sans-serif; }
 .explanation[open] { display: flex; flex-direction: column; }
 .explanation::backdrop { background: #152b24aa; }
 .explanation .header { border-bottom: 1px solid #e4e9e3; }
 .explanation h2 { flex: 1; margin: 0; font-size: 18px; }
-.explanation-body { flex: 1 1 auto; min-height: 0; padding: 16px 18px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
+.explanation-body { flex: 1 1 auto; min-height: 0; padding: 16px 18px; overflow-y: scroll; overflow-x: hidden; overscroll-behavior: contain; scrollbar-color: #6d9981 #edf2ed; scrollbar-width: auto; }
+.explanation-body::-webkit-scrollbar { width: 12px; } .explanation-body::-webkit-scrollbar-track { background: #edf2ed; } .explanation-body::-webkit-scrollbar-thumb { min-height: 36px; border: 3px solid #edf2ed; border-radius: 8px; background: #6d9981; }
 .explanation-text { overflow-wrap: anywhere; }
 .explanation-text > :first-child { margin-top: 0; } .explanation-text > :last-child { margin-bottom: 0; }
 .explanation-text h1, .explanation-text h2, .explanation-text h3 { line-height: 1.25; color: #174b3e; } .explanation-text h1 { font-size: 1.45em; } .explanation-text h2 { font-size: 1.22em; } .explanation-text h3 { font-size: 1.08em; }
