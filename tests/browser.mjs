@@ -188,7 +188,7 @@ try {
         extensionId: id,
         generate: async (prompt) => {
           requestPrompt = prompt;
-          return 'Пример объяснения для восьмого класса. <b>Ответ</b>';
+          return '## Пример объяснения\n\n**Ответ для восьмого класса.** <b>Этот тег — текст.</b>';
         },
       });
       await new Promise((resolve, reject) => {
@@ -203,11 +203,16 @@ try {
         assert.deepEqual(actions, ['Объяснить как ребенку', 'Подсветить воду']);
         await overlay.getByRole('button', { name: 'Объяснить как ребенку', exact: true }).click();
         const dialog = overlay.getByRole('dialog', { name: 'Объяснить как ребенку', exact: true });
-        const output = dialog.getByRole('status').filter({ hasText: 'Пример объяснения для восьмого класса.' });
+        const output = dialog.getByRole('status').filter({ hasText: 'Пример объяснения' });
         await output.waitFor({ timeout: 10000 });
         assert.equal(requestPrompt, `Ты гуру текущей темы, доктор наук, профессор. Напиши пост о тексте "${selection}". Объясните популярно, доходчиво, с живыми примерами из повседневной жизни, физики, философии, литературы, математики; смысл текста, чтобы аудитория постигла суть этого текста. Аудитория — школьники 8 класс. Тон — дружеский.`);
         assert.equal(await dialog.evaluate((node) => node.matches(':modal')), true);
+        assert.equal(await output.locator('h2').textContent(), 'Пример объяснения');
+        assert.equal(await output.locator('strong').textContent(), 'Ответ для восьмого класса.');
         assert.equal(await output.locator('b').count(), 0);
+        assert.match(await output.textContent(), /<b>Этот тег — текст\.<\/b>/u);
+        const dialogBox = await dialog.boundingBox();
+        assert.ok(dialogBox.x >= 9 && dialogBox.x + dialogBox.width <= 640, JSON.stringify(dialogBox));
         await page.keyboard.press('Escape');
         await dialog.waitFor({ state: 'hidden' });
         assert.ok(await panel.isVisible());

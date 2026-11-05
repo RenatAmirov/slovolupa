@@ -46,7 +46,12 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .explanation .header { border-bottom: 1px solid #e4e9e3; }
 .explanation h2 { flex: 1; margin: 0; font-size: 18px; }
 .explanation-body { padding: 16px 18px; overflow: auto; overscroll-behavior: contain; }
-.explanation-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.explanation-text { overflow-wrap: anywhere; }
+.explanation-text > :first-child { margin-top: 0; } .explanation-text > :last-child { margin-bottom: 0; }
+.explanation-text h1, .explanation-text h2, .explanation-text h3 { line-height: 1.25; color: #174b3e; } .explanation-text h1 { font-size: 1.45em; } .explanation-text h2 { font-size: 1.22em; } .explanation-text h3 { font-size: 1.08em; }
+.explanation-text p { margin: .75em 0; } .explanation-text ul, .explanation-text ol { margin: .7em 0; padding-left: 1.5em; } .explanation-text li + li { margin-top: .25em; }
+.explanation-text blockquote { margin: .8em 0; padding: .25em 0 .25em .8em; border-left: 3px solid #79a992; color: #49685b; } .explanation-text pre { margin: .8em 0; padding: .75em; overflow: auto; border-radius: 7px; background: #eaf1ea; font: .88em/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+.explanation-text code { padding: .08em .25em; border-radius: 3px; background: #eaf1ea; font: .9em ui-monospace, Consolas, monospace; } .explanation-text pre code { padding: 0; background: transparent; } .explanation-text a { color: #176044; text-decoration-thickness: 1px; }
 .explanation .hint { margin: 0 0 10px; font-size: 12px; color: #52665b; }
 .explanation details { margin-top: 16px; font-size: 12px; }
 .explanation summary { cursor: pointer; color: #20573f; }
@@ -83,6 +88,74 @@ function button(text, className, action, label) {
   if (label) node.setAttribute('aria-label', label);
   node.addEventListener('click', action);
   return node;
+}
+
+// The model response is untrusted: build Markdown elements through the DOM instead
+// of assigning HTML, so tags returned by a model cannot execute on the page.
+function appendMarkdownInline(parent, source) {
+  const pattern = /(`[^`]*`|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*[^*]+\*|_[^_]+_)/g;
+  let position = 0;
+  for (const match of source.matchAll(pattern)) {
+    if (match.index > position) parent.append(document.createTextNode(source.slice(position, match.index)));
+    const token = match[0];
+    let element;
+    if (token.startsWith('`')) element = el('code', '', token.slice(1, -1));
+    else if (token.startsWith('**') || token.startsWith('__')) element = el('strong', '', token.slice(2, -2));
+    else if (token.startsWith('~~')) element = el('s', '', token.slice(2, -2));
+    else if (token.startsWith('[')) {
+      const [, label, href] = token.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/) || [];
+      if (label && href) {
+        element = el('a', '', label); element.href = href; element.target = '_blank'; element.rel = 'noopener noreferrer';
+      }
+    } else element = el('em', '', token.slice(1, -1));
+    parent.append(element || document.createTextNode(token));
+    position = match.index + token.length;
+  }
+  if (position < source.length) parent.append(document.createTextNode(source.slice(position)));
+}
+
+function renderMarkdown(output, markdown) {
+  const fragment = document.createDocumentFragment();
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index];
+    if (!line.trim()) { index++; continue; }
+    if (/^```/.test(line)) {
+      const code = []; index++;
+      while (index < lines.length && !/^```/.test(lines[index])) code.push(lines[index++]);
+      if (index < lines.length) index++;
+      const pre = el('pre'); pre.append(el('code', '', code.join('\n'))); fragment.append(pre); continue;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) { const node = el(`h${heading[1].length}`); appendMarkdownInline(node, heading[2]); fragment.append(node); index++; continue; }
+    if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) { fragment.append(el('hr')); index++; continue; }
+    const listMatch = line.match(/^\s*([-*+])\s+(.+)$/);
+    const orderedMatch = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (listMatch || orderedMatch) {
+      const ordered = Boolean(orderedMatch); const list = el(ordered ? 'ol' : 'ul');
+      while (index < lines.length) {
+        const item = ordered ? lines[index].match(/^\s*\d+[.)]\s+(.+)$/) : lines[index].match(/^\s*[-*+]\s+(.+)$/);
+        if (!item) break;
+        const node = el('li'); appendMarkdownInline(node, item[1]); list.append(node); index++;
+      }
+      fragment.append(list); continue;
+    }
+    if (line.startsWith('>')) {
+      const quote = el('blockquote');
+      while (index < lines.length && lines[index].startsWith('>')) {
+        if (quote.childNodes.length) quote.append(document.createElement('br'));
+        appendMarkdownInline(quote, lines[index++].replace(/^>\s?/, ''));
+      }
+      fragment.append(quote); continue;
+    }
+    const paragraph = el('p');
+    while (index < lines.length && lines[index].trim() && !/^```|^(#{1,3})\s+|^\s*([-*+])\s+|^\s*\d+[.)]\s+|^>/.test(lines[index])) {
+      if (paragraph.childNodes.length) paragraph.append(document.createElement('br'));
+      appendMarkdownInline(paragraph, lines[index++]);
+    }
+    fragment.append(paragraph);
+  }
+  output.replaceChildren(fragment);
 }
 
 export class Lens {
@@ -138,7 +211,7 @@ export class Lens {
     dialog.showModal();
     close.focus();
     requestExplanation(prompt).then(
-      (text) => { if (dialog.open) result.textContent = text; },
+      (text) => { if (dialog.open) renderMarkdown(result, text); },
       (error) => { if (dialog.open) result.textContent = error.message; },
     );
   }
