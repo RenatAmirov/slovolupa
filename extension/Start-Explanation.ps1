@@ -1,3 +1,4 @@
+$env:MIRAI_MODEL = 'gpt-5.6-luna'
 $ErrorActionPreference = 'Stop'
 $extensionId = (Read-Host 'Slovolupa extension ID (see chrome://extensions)').Trim()
 if ($extensionId -notmatch '^[a-p]{32}$') { throw 'Enter the 32-letter Chrome extension ID.' }
