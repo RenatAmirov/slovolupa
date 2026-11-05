@@ -1,7 +1,7 @@
 const pair = { sourceLanguage: 'en', targetLanguage: 'ru' };
 
-export async function translateWord(word) {
-  const translator = await globalThis.Translator.create(pair);
+export async function translateWord(word, sourceLanguage, targetLanguage) {
+  const translator = await globalThis.Translator.create({ sourceLanguage, targetLanguage });
   try {
     return await translator.translate(word);
   } finally {

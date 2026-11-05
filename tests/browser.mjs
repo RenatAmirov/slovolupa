@@ -260,15 +260,15 @@ try {
     await popup.close(); await manager.close();
   });
   await check('Нет ошибок JavaScript на странице', async () => assert.deepEqual(errors, []));
-  await check('Наведение подсвечивает русскую словоформу и убирает подсветку при уходе', async () => {
+  await check('Наведение подсвечивает соответствующие слова в обе стороны', async () => {
     const fixture = await context.newPage();
     await fixture.setContent('<p id="original">She buys books and works with books.</p>');
     await fixture.evaluate(() => {
       Object.defineProperty(globalThis, 'Translator', {
         value: {
           availability: async () => 'available',
-          create: async () => ({
-            translate: async (text) => ({
+          create: async ({ sourceLanguage }) => ({
+            translate: async (text) => sourceLanguage === 'ru' ? 'book' : ({
               books: 'книги', and: 'а', works: 'работает',
             })[text] ?? 'Она покупает книги и работает с книгами.',
             destroy() {},
@@ -279,15 +279,27 @@ try {
     await fixture.addScriptTag({ path: path.join(extension, 'content.js') });
     await fixture.locator('#original').click();
     const books = fixture.locator('word-lens-overlay .word').getByText('books', { exact: true });
+    const originalHighlight = fixture.locator('word-lens-overlay .original-highlight');
+    const translatedWords = fixture.locator('word-lens-overlay .translation-text [data-root]');
+    await translatedWords.getByText('книгами', { exact: true }).hover();
+    await originalHighlight.waitFor();
+    assert.ok(await books.last().evaluate((word) => word.classList.contains('original-highlight')));
+    assert.equal(await originalHighlight.evaluate((word) => getComputedStyle(word).backgroundColor), 'rgb(161, 228, 168)');
+    await fixture.mouse.move(3, 3);
+    await originalHighlight.waitFor({ state: 'detached' });
+    await translatedWords.getByText('книги', { exact: true }).hover();
+    await originalHighlight.waitFor();
+    assert.ok(await books.first().evaluate((word) => word.classList.contains('original-highlight')));
+
     await books.first().hover();
-    const mark = fixture.locator('word-lens-overlay .translation-text mark');
+    const mark = fixture.locator('word-lens-overlay .translation-text .translation-highlight');
     await mark.waitFor();
     assert.equal(await mark.textContent(), 'книги');
     await books.last().hover();
-    await fixture.waitForFunction(() => document.querySelector('word-lens-overlay').shadowRoot.querySelector('mark')?.textContent === 'книгами');
+    await fixture.waitForFunction(() => document.querySelector('word-lens-overlay').shadowRoot.querySelector('.translation-highlight')?.textContent === 'книгами');
     assert.equal(await mark.textContent(), 'книгами');
     await fixture.locator('word-lens-overlay .word').getByText('and', { exact: true }).hover();
-    const nearby = fixture.locator('word-lens-overlay .translation-text mark.nearby');
+    const nearby = fixture.locator('word-lens-overlay .translation-text .translation-highlight.nearby');
     await nearby.last().waitFor();
     assert.deepEqual(await nearby.allTextContents(), ['книги', 'работает']);
     await fixture.mouse.move(3, 3);

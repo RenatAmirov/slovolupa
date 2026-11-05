@@ -42,8 +42,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .translation { padding: 12px 15px; margin: 0 0 16px; background: #edf3ec; border-radius: 9px; }
 .translation strong { display: block; margin-bottom: 4px; }
 .translation-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.translation-text mark { background: #ffe052; color: inherit; border-radius: 3px; }
-.translation-text mark.nearby { background: #fff1a8; }
+.translation-text .translation-highlight { background: #ffe052; border-radius: 3px; }
+.translation-text .translation-highlight.nearby { background: #fff1a8; }
+.word.original-highlight { background: #a1e4a8; color: #173e30; }
 .hint { color: #849086; font-size: 10px; margin: 15px 0 0; }
 .footer { display: flex; justify-content: space-between; gap: 10px; padding: 10px 18px; border-top: 1px solid #e4e9e3; color: #7c8c80; font-size: 10px; flex: 0 0 auto; } .local { color: #47735a; }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .stat { padding: 12px; border-radius: 9px; background: #eff3ec; } .stat b { display: block; color: #20533e; font-size: 23px; font-weight: 550; line-height: 1.3; } .stat span { font-size: 10px; color: #738271; }
@@ -101,7 +102,7 @@ export class Lens {
         if (!this.visible || this.result !== result) return;
         this.translation = message;
         const output = this.shadow.querySelector('.translation-text');
-        if (output) output.textContent = message;
+        if (output) this.renderTranslation(output);
       };
       translateEnglish(result.text, update).then((translated) => {
         if (!this.visible || this.result !== result) return;
@@ -169,12 +170,116 @@ export class Lens {
       this.panel.append(header, summary, tabs, body, footer);
     }
   }
+  renderTranslation(output) {
+    if (!this.translatedTokens) {
+      output.textContent = this.translation;
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    for (const token of this.translatedTokens) {
+      if (!token.isWord) {
+        fragment.append(document.createTextNode(token.text));
+        continue;
+      }
+      const word = el('span', '', token.text);
+      word.dataset.root = token.root;
+      word.dataset.language = token.language || '';
+      fragment.append(word);
+    }
+    output.replaceChildren(fragment);
+  }
+
+  bindWordHighlights(source, target, sourceLanguage, targetLanguage) {
+    const fromEnglish = sourceLanguage === 'en';
+    const highlight = fromEnglish ? 'translation-highlight' : 'original-highlight';
+    const translations = this.wordTranslations;
+    let hovered;
+    let highlighted = [];
+
+    function clear() {
+      for (const word of highlighted) {
+        word.classList.remove(highlight, 'nearby');
+        if (fromEnglish) word.removeAttribute('title');
+      }
+      highlighted = [];
+    }
+
+    const findMatch = async (word, sourceWords, targetWords) => {
+      const original = word.textContent;
+      const preservedName = word.dataset.language === 'en' && targetWords.some((candidate) =>
+        candidate.dataset.language === 'en' && candidate.textContent === original
+      );
+      let matches;
+      if (preservedName) {
+        matches = targetWords.filter((candidate) => candidate.dataset.language === 'en' && candidate.textContent === original);
+      } else {
+        if (word.dataset.language !== sourceLanguage) return;
+        const key = `${sourceLanguage}:${original}`;
+        if (!translations.has(key)) {
+          translations.set(key, translateWord(original, sourceLanguage, targetLanguage).then((translated) =>
+            new Set(analyze(translated).tokens.filter((token) => token.language === targetLanguage).map((token) => token.root))
+          ).catch(() => {
+            translations.delete(key);
+            return new Set();
+          }));
+        }
+        const roots = await translations.get(key);
+        matches = targetWords.filter((candidate) => candidate.dataset.language === targetLanguage && roots.has(candidate.dataset.root));
+      }
+      if (!matches.length) return;
+      let occurrence = 0;
+      for (const candidate of sourceWords) {
+        if (candidate === word) break;
+        if (preservedName ? candidate.textContent === original : candidate.dataset.root === word.dataset.root) occurrence++;
+      }
+      return matches[Math.min(occurrence, matches.length - 1)];
+    };
+
+    source.addEventListener('pointerover', async (event) => {
+      const word = event.target.closest('[data-root]');
+      if (!word || word === hovered || !this.translatedTokens) return;
+      hovered = word;
+      clear();
+      const sourceWords = [...source.querySelectorAll('[data-root]')];
+      const targetWords = [...target.querySelectorAll('[data-root]')];
+      const isCurrent = () => hovered === word && word.isConnected && target.isConnected;
+      const match = await findMatch(word, sourceWords, targetWords);
+      if (!isCurrent()) return;
+      if (match) {
+        match.classList.add(highlight);
+        highlighted = [match];
+      } else if (fromEnglish) {
+        const index = sourceWords.indexOf(word);
+        const nearby = await Promise.all([-1, 1].map(async (direction) => {
+          for (let distance = 1; distance <= 3 && isCurrent(); distance++) {
+            const neighbor = sourceWords[index + direction * distance];
+            if (!neighbor) break;
+            const candidate = await findMatch(neighbor, sourceWords, targetWords);
+            if (candidate) return candidate;
+          }
+        }));
+        if (!isCurrent()) return;
+        highlighted = [...new Set(nearby.filter(Boolean))];
+        for (const candidate of highlighted) {
+          candidate.classList.add(highlight, 'nearby');
+          candidate.title = 'Соответствие соседнего слова';
+        }
+      }
+    });
+    source.addEventListener('pointerout', (event) => {
+      if (!hovered || hovered.contains(event.relatedTarget)) return;
+      hovered = null;
+      clear();
+    });
+  }
+
   renderMap(body) {
     let output;
     if (this.translation) {
       const section = el('section', 'translation');
-      output = el('div', 'translation-text', this.translation);
+      output = el('div', 'translation-text');
       output.setAttribute('role', 'status');
+      this.renderTranslation(output);
       section.append(el('strong', '', 'Перевод на русский'), output);
       body.append(section);
     }
@@ -189,69 +294,9 @@ export class Lens {
     legend.append(toggle);
     const text = el('div', `text${this.highlightWater ? ' show-water' : ''}`);
     text.setAttribute('dir', 'auto');
-    let hovered;
     if (output) {
-      const findMatch = async (word, words, tokens) => {
-        const original = word.textContent;
-        const nameMatches = tokens.some((token) => token.isWord && token.language === 'en' && token.text === original);
-        let roots;
-        if (!nameMatches) {
-          if (!this.wordTranslations.has(original)) {
-            this.wordTranslations.set(original, translateWord(original).then((translated) =>
-              new Set(analyze(translated).tokens.filter((token) => token.language === 'ru').map((token) => token.root))
-            ).catch(() => new Set()));
-          }
-          roots = await this.wordTranslations.get(original);
-        }
-        let occurrence = 0;
-        for (const candidate of words) {
-          if (candidate === word) break;
-          if (nameMatches ? candidate.textContent === original : candidate.dataset.root === word.dataset.root) occurrence++;
-        }
-        const matches = tokens.filter((token) => nameMatches ? token.isWord && token.text === original
-          : token.language === 'ru' && roots.has(token.root));
-        return matches[Math.min(occurrence, matches.length - 1)];
-      };
-      text.addEventListener('pointerover', async (event) => {
-        const word = event.target.closest('.word');
-        if (!word || word === hovered) return;
-        hovered = word;
-        output.textContent = this.translation;
-        const tokens = this.translatedTokens;
-        if (!tokens) return;
-        const words = [...text.querySelectorAll('.word')];
-        const index = words.indexOf(word);
-        const isCurrent = () => hovered === word && output.isConnected && this.translatedTokens === tokens;
-        const match = await findMatch(word, words, tokens);
-        if (!isCurrent()) return;
-        let nearby = [];
-        if (!match) {
-          nearby = await Promise.all([-1, 1].map(async (direction) => {
-            for (let distance = 1; distance <= 3 && isCurrent(); distance++) {
-              const neighbor = words[index + direction * distance];
-              if (!neighbor) break;
-              const candidate = await findMatch(neighbor, words, tokens);
-              if (candidate) return candidate;
-            }
-          }));
-        }
-        if (!isCurrent()) return;
-        const highlighted = document.createDocumentFragment();
-        for (const token of tokens) {
-          if (token === match) highlighted.append(el('mark', '', token.text));
-          else if (nearby.includes(token)) {
-            const hint = el('mark', 'nearby', token.text);
-            hint.title = 'Соответствие соседнего слова';
-            highlighted.append(hint);
-          } else highlighted.append(document.createTextNode(token.text));
-        }
-        output.replaceChildren(highlighted);
-      });
-      text.addEventListener('pointerout', (event) => {
-        if (!hovered || hovered.contains(event.relatedTarget)) return;
-        hovered = null;
-        output.textContent = this.translation;
-      });
+      this.bindWordHighlights(text, output, 'en', 'ru');
+      this.bindWordHighlights(output, text, 'ru', 'en');
     }
     const fragment = document.createDocumentFragment();
     for (const token of this.result.tokens) {
@@ -261,12 +306,13 @@ export class Lens {
       if (token.topFrequency) span.classList.add('top-frequency');
       else span.style.fontWeight = token.fontWeight;
       span.dataset.root = token.root; span.dataset.count = token.count; span.dataset.category = token.category;
+      span.dataset.language = token.language || '';
       span.title = `${CATEGORY_LABEL[token.category]} · основа «${token.root}» · ${token.count} повтор. в тексте`;
       fragment.append(span);
     }
     text.append(fragment);
     body.append(legend, text, el('p', 'hint', 'Наведите на слово: основа и число повторений. Служебные слова приглушены.'));
-    if (output) body.append(el('p', 'hint', 'Яркая подсветка показывает найденное соответствие. Светлая указывает на переводы соседних слов.'));
+    if (output) body.append(el('p', 'hint', 'Жёлтая подсветка показывает соответствие в переводе, зелёная — в оригинале. Светло-жёлтым отмечены переводы соседних слов.'));
   }
   renderStats(body) {
     const s = this.result.stats;
