@@ -143,7 +143,12 @@ try {
     assert.deepEqual(await summary.locator('.pill').allTextContents(), ['2800 слов', '0% воды', 'RU']);
     const summaryBox = await summary.boundingBox();
     const bodyBox = await overlay.locator('.body').boundingBox();
-    assert.ok(summaryBox.y >= bodyBox.y + bodyBox.height - 1);
+    const tabsBox = await overlay.getByRole('tablist').boundingBox();
+    assert.ok(tabsBox.y >= bodyBox.y + bodyBox.height - 1);
+    assert.ok(summaryBox.y >= tabsBox.y + tabsBox.height - 1);
+    const frequencyTab = overlay.getByRole('tab', { name: 'Частоты', exact: true });
+    await frequencyTab.click();
+    assert.equal(await frequencyTab.getAttribute('aria-selected'), 'true');
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(() => { document.getElementById('long').remove(); window.scrollTo(0, 0); });
   });
