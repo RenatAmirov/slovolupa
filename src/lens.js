@@ -1,5 +1,6 @@
 import { analyze } from './analyzer.cjs';
 import { translateEnglish, translateWord } from './translation.mjs';
+import { explanationPrompt, requestExplanation } from './explanation.js';
 import latinFont from '@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2';
 import cyrillicFont from '@fontsource-variable/manrope/files/manrope-cyrillic-wght-normal.woff2';
 
@@ -36,6 +37,20 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .tabs-bottom + .summary-bottom { border-top: 0; }
 .body { padding: 18px; min-height: 0; overflow: auto; overscroll-behavior: contain; flex: 1 1 auto; scrollbar-width: thin; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 10px; color: #75847b; margin-bottom: 14px; align-items: center; } .legend b { font-size: 14px; color: #255c43; } .water-toggle { margin-left: auto; border-radius: 5px; background: #eaf0e9; padding: 4px 8px; font-size: 10px; } .water-toggle[aria-pressed=true] { background: #f9e9cd; color: #8b5b17; }
+.legend-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.legend-actions .water-toggle { margin-left: 0; }
+.explain-button { border-radius: 5px; background: #dcebdc; color: #20573f; padding: 4px 8px; font-size: 10px; }
+.explanation { padding: 0; width: min(760px, calc(100% - 24px)); max-height: calc(100dvh - 24px); margin: auto; border: 1px solid #d8e1db; border-radius: 14px; background: #fbfcfa; color: #193b33; font: 15px/1.65 system-ui, sans-serif; }
+.explanation[open] { display: flex; flex-direction: column; }
+.explanation::backdrop { background: #152b24aa; }
+.explanation .header { border-bottom: 1px solid #e4e9e3; }
+.explanation h2 { flex: 1; margin: 0; font-size: 18px; }
+.explanation-body { padding: 16px 18px; overflow: auto; overscroll-behavior: contain; }
+.explanation-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.explanation .hint { margin: 0 0 10px; font-size: 12px; color: #52665b; }
+.explanation details { margin-top: 16px; font-size: 12px; }
+.explanation summary { cursor: pointer; color: #20573f; }
+.explanation textarea { display: block; width: 100%; margin-top: 8px; padding: 8px; color: inherit; font: inherit; }
 .text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; color: #204b37; font-size: 16px; font-family: 'Slovolupa Map', 'Segoe UI Variable', system-ui, sans-serif; }
 .word { border-radius: 3px; } .word:hover { background: #deebdc; } .water { color: #7e887e; } .show-water .water { background: #faecd2; color: #8e662c; }
 .word.top-frequency { font-family: Georgia, 'Times New Roman', serif; font-weight: 700; }
@@ -84,7 +99,48 @@ export class Lens {
     this.visible = false;
   }
   contains(event) { return event.composedPath().includes(this.host); }
+  get explanationOpen() { return Boolean(this.explanationDialog?.open); }
+
+  showExplanation() {
+    if (this.explanationOpen) return;
+    const prompt = explanationPrompt(this.result.text);
+    const dialog = el('dialog', 'explanation');
+    dialog.setAttribute('aria-labelledby', 'explanation-title');
+    const title = el('h2', '', 'Объяснить как ребенку');
+    title.id = 'explanation-title';
+    const close = button('×', 'close', () => dialog.close(), 'Закрыть объяснение');
+    const header = el('div', 'header');
+    header.append(title, close);
+
+    const body = el('div', 'explanation-body');
+    const result = el('div', 'explanation-text', 'Готовим объяснение…');
+    result.setAttribute('role', 'status');
+    const details = el('details');
+    const promptField = el('textarea');
+    promptField.rows = 6;
+    promptField.readOnly = true;
+    promptField.value = prompt;
+    promptField.setAttribute('aria-label', 'Промпт с выделенным текстом');
+    details.append(el('summary', '', 'Показать промпт'), promptField);
+    body.append(el('p', 'hint', 'Запрос на объяснение отправляется в OpenAI через локальный помощник.'), result, details);
+    dialog.append(header, body);
+    dialog.addEventListener('close', () => {
+      if (this.explanationDialog === dialog) this.explanationDialog = null;
+      dialog.remove();
+    }, { once: true });
+
+    this.explanationDialog = dialog;
+    this.shadow.append(dialog);
+    dialog.showModal();
+    close.focus();
+    requestExplanation(prompt).then(
+      (text) => { if (dialog.open) result.textContent = text; },
+      (error) => { if (dialog.open) result.textContent = error.message; },
+    );
+  }
+
   show(result, mode, highlightWater) {
+    this.explanationDialog?.close();
     loadMapFont();
     this.result = result;
     this.translation = result.stats.languages.join() === 'en' ? 'Подготовка перевода…' : '';
@@ -114,7 +170,11 @@ export class Lens {
       });
     }
   }
-  hide() { this.visible = false; this.host.remove(); }
+  hide() {
+    this.explanationDialog?.close();
+    this.visible = false;
+    this.host.remove();
+  }
   position() {
     const viewport = window.visualViewport;
     const bounds = {
@@ -291,7 +351,13 @@ export class Lens {
       this.onWaterChange(this.highlightWater);
     });
     toggle.setAttribute('aria-pressed', String(this.highlightWater));
-    legend.append(toggle);
+    if (this.mode === 'selection') {
+      const actions = el('div', 'legend-actions');
+      actions.append(button('Объяснить как ребенку', 'explain-button', () => this.showExplanation()), toggle);
+      legend.append(actions);
+    } else {
+      legend.append(toggle);
+    }
     const text = el('div', `text${this.highlightWater ? ' show-water' : ''}`);
     text.setAttribute('dir', 'auto');
     if (output) {

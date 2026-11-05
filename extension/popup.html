@@ -21,8 +21,13 @@
     <p class="instructions">Щёлкните по абзацу или выделите текст мышью. <kbd>Esc</kbd> закрывает окно.</p>
     <div id="status" role="status" aria-live="polite"></div>
     <a href="pdf.html" target="_blank" rel="noopener" style="display:block;padding:9px 12px;background:#e5eee3;border-radius:7px;color:#254737;font-weight:600;text-decoration:none">Открыть PDF или DjVu ↗</a>
+    <details class="instructions">
+      <summary>Как включить «Объяснить как ребенку»</summary>
+      <p>Запустите <code>Start-Explanation.ps1</code> из папки расширения. Введите идентификатор ниже и ключ OpenAI API.</p>
+      <code id="extension-id"></code>
+    </details>
   </main>
-  <footer><span>● Текст остаётся на устройстве</span><span>RU / EN</span></footer>
+  <footer><span>● Локальный анализ текста</span><span>RU / EN</span></footer>
   <script src="popup.js"></script>
 </body>
 </html>

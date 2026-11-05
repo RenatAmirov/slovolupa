@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createDemoServer } from '../scripts/serve.mjs';
+import { createExplanationServer } from '../scripts/explain-server.mjs';
 
 const server = createDemoServer();
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -181,6 +182,39 @@ try {
     assert.equal(await overlay.count(), 0);
     await popup.locator('#enabled').check();
     await page.mouse.move(3, 3); await page.locator('#russian').click(); await panel.waitFor();
+    await check('Кнопка объяснения отправляет промпт с выделением и открывает ответ поверх анализа', async () => {
+      let requestPrompt;
+      const helper = createExplanationServer({
+        extensionId: id,
+        generate: async (prompt) => {
+          requestPrompt = prompt;
+          return 'Пример объяснения для восьмого класса. <b>Ответ</b>';
+        },
+      });
+      await new Promise((resolve, reject) => {
+        helper.once('error', reject);
+        helper.listen(4174, '127.0.0.1', resolve);
+      });
+      try {
+        await reset();
+        await select('#russian');
+        const selection = await page.evaluate(() => getSelection().toString());
+        const actions = await overlay.locator('.legend-actions button').allTextContents();
+        assert.deepEqual(actions, ['Объяснить как ребенку', 'Подсветить воду']);
+        await overlay.getByRole('button', { name: 'Объяснить как ребенку', exact: true }).click();
+        const dialog = overlay.getByRole('dialog', { name: 'Объяснить как ребенку', exact: true });
+        const output = dialog.getByRole('status').filter({ hasText: 'Пример объяснения для восьмого класса.' });
+        await output.waitFor({ timeout: 10000 });
+        assert.equal(requestPrompt, `Ты гуру текущей темы, доктор наук, профессор. Напиши пост о тексте "${selection}". Объясните популярно, доходчиво, с живыми примерами из повседневной жизни, физики, философии, литературы, математики; смысл текста, чтобы аудитория постигла суть этого текста. Аудитория — школьники 8 класс. Тон — дружеский.`);
+        assert.equal(await dialog.evaluate((node) => node.matches(':modal')), true);
+        assert.equal(await output.locator('b').count(), 0);
+        await page.keyboard.press('Escape');
+        await dialog.waitFor({ state: 'hidden' });
+        assert.ok(await panel.isVisible());
+      } finally {
+        await new Promise((resolve) => helper.close(resolve));
+      }
+    });
     await check('Локальный PDF открывается из меню; щелчок анализирует текст PDF', async () => {
       const fixture = await context.newPage();
       await fixture.setContent(`

@@ -3,6 +3,7 @@ import { readSettings } from './settings.js';
 async function initialize() {
   const settings = await readSettings();
   const status = document.getElementById('status');
+  document.getElementById('extension-id').textContent = chrome.runtime.id;
   for (const key of ['enabled', 'highlightWater']) {
     const input = document.getElementById(key);
     input.checked = settings[key];

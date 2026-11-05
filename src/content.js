@@ -91,6 +91,7 @@ function start() {
   }, { passive: true });
   document.addEventListener('pointercancel', () => { mouseSelection = null; });
   document.addEventListener('keydown', (event) => {
+    if (lens.explanationOpen) return;
     if (event.key === 'Escape' && lens.visible) { dismiss(); return; }
     if (lens.visible && !lens.contains(event)) dismiss();
     if (lens.contains(event) && event.key === 'Tab') {
