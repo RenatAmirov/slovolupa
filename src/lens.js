@@ -54,6 +54,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; color: #204b37; font-size: 16px; font-family: 'Slovolupa Map', 'Segoe UI Variable', system-ui, sans-serif; }
 .word { border-radius: 3px; } .word:hover { background: #deebdc; } .water { color: #7e887e; } .show-water .water { background: #faecd2; color: #8e662c; }
 .word.top-frequency { font-family: Georgia, 'Times New Roman', serif; font-weight: 700; }
+.word-info { position: fixed; z-index: 1; display: none; max-width: min(260px, calc(100vw - 10px)); padding: 3px 5px; border: 1px solid #c7d6cc; border-radius: 5px; background: #f7fbf6; box-shadow: 0 3px 12px #132c2630; color: #294d3d; font: 9px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif; pointer-events: none; }
+.word-info.visible { display: block; }
 .translation { padding: 12px 15px; margin: 0 0 16px; background: #edf3ec; border-radius: 9px; }
 .translation strong { display: block; margin-bottom: 4px; }
 .translation-text { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -94,7 +96,9 @@ export class Lens {
     this.panel = el('section', 'panel');
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-label', 'Словолупа — анализ текста');
-    this.shadow.append(style, this.panel);
+    this.wordInfo = el('div', 'word-info');
+    this.wordInfo.setAttribute('role', 'tooltip');
+    this.shadow.append(style, this.panel, this.wordInfo);
     this.tab = 'map';
     this.visible = false;
   }
@@ -172,8 +176,24 @@ export class Lens {
   }
   hide() {
     this.explanationDialog?.close();
+    this.hideWordInfo();
     this.visible = false;
     this.host.remove();
+  }
+  hideWordInfo() {
+    this.wordInfo.classList.remove('visible');
+    this.wordInfo.replaceChildren();
+  }
+  showWordInfo(word, event) {
+    this.wordInfo.textContent = `${CATEGORY_LABEL[word.dataset.category]} · основа «${word.dataset.root}» · ${word.dataset.count} повтор. в тексте`;
+    this.wordInfo.classList.add('visible');
+    const margin = 5;
+    const gap = 8;
+    const rect = this.wordInfo.getBoundingClientRect();
+    const left = Math.max(margin, Math.min(event.clientX + gap, window.innerWidth - rect.width - margin));
+    const top = Math.max(margin, Math.min(event.clientY + gap, window.innerHeight - rect.height - margin));
+    this.wordInfo.style.left = `${left}px`;
+    this.wordInfo.style.top = `${top}px`;
   }
   position() {
     const viewport = window.visualViewport;
@@ -373,10 +393,21 @@ export class Lens {
       else span.style.fontWeight = token.fontWeight;
       span.dataset.root = token.root; span.dataset.count = token.count; span.dataset.category = token.category;
       span.dataset.language = token.language || '';
-      span.title = `${CATEGORY_LABEL[token.category]} · основа «${token.root}» · ${token.count} повтор. в тексте`;
       fragment.append(span);
     }
     text.append(fragment);
+    text.addEventListener('pointerover', (event) => {
+      const word = event.target.closest('.word');
+      if (word) this.showWordInfo(word, event);
+    });
+    text.addEventListener('pointermove', (event) => {
+      const word = event.target.closest('.word');
+      if (word) this.showWordInfo(word, event);
+    });
+    text.addEventListener('pointerout', (event) => {
+      const word = event.target.closest('.word');
+      if (word && !word.contains(event.relatedTarget)) this.hideWordInfo();
+    });
     body.append(legend, text, el('p', 'hint', 'Наведите на слово: основа и число повторений. Служебные слова приглушены.'));
     if (output) body.append(el('p', 'hint', 'Жёлтая подсветка показывает соответствие в переводе, зелёная — в оригинале. Светло-жёлтым отмечены переводы соседних слов.'));
   }
