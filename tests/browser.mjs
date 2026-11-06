@@ -252,6 +252,30 @@ try {
       assert.match(await reader.locator('#document').textContent(), /Write, writes, writing!/u);
       const canvas = reader.getByRole('img', { name: 'Оригинал страницы 1' });
       await canvas.waitFor({ timeout: 10000 });
+      await reader.locator('#save-bookmark').waitFor({ state: 'visible' });
+      assert.equal(await reader.locator('#save-bookmark').isDisabled(), false);
+      await reader.evaluate(() => {
+        window.showSaveFilePicker = async () => ({
+          name: 'example.json',
+          createWritable: async () => ({
+            write: async (data) => { window.__savedSlovolupaBookmark = data; },
+            close: async () => {},
+          }),
+        });
+      });
+      await reader.locator('#save-bookmark').click();
+      await reader.waitForFunction(() => Boolean(window.__savedSlovolupaBookmark));
+      const bookmark = JSON.parse(await reader.evaluate(() => window.__savedSlovolupaBookmark));
+      assert.deepEqual(bookmark.format, 'slovolupa-bookmark');
+      assert.equal(bookmark.document.name, 'example.pdf');
+      assert.equal(bookmark.location.page, 1);
+      await reader.evaluate((data) => {
+        window.showOpenFilePicker = async () => [{
+          getFile: async () => new File([JSON.stringify(data)], 'example.json', { type: 'application/json' }),
+        }];
+      }, bookmark);
+      await reader.locator('#open-bookmark').click();
+      await reader.getByRole('status').filter({ hasText: 'Открыта закладка: страница 1.' }).waitFor();
       const renderedColors = await canvas.evaluate((node) => {
         const { data } = node.getContext('2d').getImageData(0, 0, node.width, node.height);
         const palette = [[241, 200, 76], [40, 120, 66], [60, 110, 180]];

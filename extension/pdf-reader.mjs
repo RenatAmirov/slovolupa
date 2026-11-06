@@ -4,9 +4,98 @@ GlobalWorkerOptions.workerSrc = new URL('./pdfjs/pdf.worker.min.mjs', import.met
 const input = document.getElementById('file');
 const status = document.getElementById('status');
 const output = document.getElementById('document');
+const saveBookmark = document.getElementById('save-bookmark');
+const openBookmark = document.getElementById('open-bookmark');
 let generation = 0;
 let task;
 let pageObserver;
+let openedDocument;
+
+function bookmarkFilename(filename) {
+  return `${filename.replace(/\.[^.]+$/u, '') || filename}.json`;
+}
+
+function currentLocation() {
+  const sections = [...output.querySelectorAll('section[data-page]')];
+  const section = sections.find((node) => node.getBoundingClientRect().bottom > 0) || sections.at(-1);
+  if (!section) return { page: 1, offset: 0 };
+  return {
+    page: Number(section.dataset.page),
+    offset: Math.max(0, Math.round(-section.getBoundingClientRect().top)),
+  };
+}
+
+function bookmarkData() {
+  const { file, format, pages } = openedDocument;
+  return {
+    format: 'slovolupa-bookmark', version: 1,
+    document: { name: file.name, size: file.size, lastModified: file.lastModified, type: format },
+    location: currentLocation(), savedAt: new Date().toISOString(),
+    pages,
+  };
+}
+
+function validateBookmark(data) {
+  const expected = openedDocument?.file;
+  if (!data || data.format !== 'slovolupa-bookmark' || data.version !== 1 || !expected ||
+      data.document?.name !== expected.name || data.document?.size !== expected.size ||
+      data.document?.lastModified !== expected.lastModified || !Number.isInteger(data.location?.page) ||
+      !Number.isFinite(data.location?.offset)) {
+    throw new Error('Эта закладка не относится к открытому файлу. Сначала выберите соответствующий PDF или DjVu.');
+  }
+}
+
+function restoreBookmark(data) {
+  validateBookmark(data);
+  const section = output.querySelector(`section[data-page="${data.location.page}"]`);
+  if (!section) throw new Error('В закладке указана страница, которой нет в этом файле.');
+  const top = window.scrollY + section.getBoundingClientRect().top + Math.max(0, data.location.offset);
+  window.scrollTo({ top, behavior: 'smooth' });
+  status.textContent = `Открыта закладка: страница ${data.location.page}.`;
+}
+
+saveBookmark.addEventListener('click', async () => {
+  if (!openedDocument) return;
+  const name = bookmarkFilename(openedDocument.file.name);
+  const content = JSON.stringify(bookmarkData(), null, 2);
+  try {
+    if (!window.showSaveFilePicker) throw new Error('unsupported');
+    const handle = await window.showSaveFilePicker({
+      suggestedName: name,
+      types: [{ description: 'Закладка Словолупы', accept: { 'application/json': ['.json'] } }],
+    });
+    const writable = await handle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    status.textContent = `Закладка сохранена как ${handle.name}. Выберите папку с исходным файлом, чтобы они лежали рядом.`;
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    if (error.message !== 'unsupported') {
+      status.textContent = 'Не удалось сохранить закладку.';
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
+    link.download = name; link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 0);
+    status.textContent = `Закладка скачана как ${name}. Переместите её в папку с исходным файлом.`;
+  }
+});
+
+openBookmark.addEventListener('click', async () => {
+  if (!openedDocument) return;
+  try {
+    if (!window.showOpenFilePicker) throw new Error('unsupported');
+    const [handle] = await window.showOpenFilePicker({
+      multiple: false,
+      types: [{ description: 'Закладка Словолупы', accept: { 'application/json': ['.json'] } }],
+    });
+    restoreBookmark(JSON.parse(await (await handle.getFile()).text()));
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    status.textContent = error instanceof SyntaxError ? 'Файл закладки содержит некорректный JSON.' : error.message || 'Не удалось открыть закладку.';
+  }
+});
 
 function pagePreview(page, number, observer, previews) {
   const preview = document.createElement('div');
@@ -115,6 +204,9 @@ input.addEventListener('change', async () => {
   const run = ++generation;
   const old = task;
   task = null;
+  openedDocument = null;
+  saveBookmark.disabled = true;
+  openBookmark.disabled = true;
   pageObserver?.disconnect();
   output.replaceChildren();
   let format = /\.djvu?$/i.test(file.name) ? 'DjVu' : 'PDF';
@@ -136,6 +228,7 @@ input.addEventListener('change', async () => {
       if (run !== generation) return;
       const { blocks } = page;
       const section = document.createElement('section');
+      section.dataset.page = String(number);
       const title = document.createElement('h2');
       title.textContent = `Страница ${number}`;
       section.append(title);
@@ -164,6 +257,9 @@ input.addEventListener('change', async () => {
     status.textContent = pagesWithText
       ? `${file.name} · страниц с текстом: ${pagesWithText} из ${documentFile.numPages}`
       : `${file.name} · текстовый слой не найден. Для скана потребуется OCR.`;
+    openedDocument = { file, format, pages: documentFile.numPages };
+    saveBookmark.disabled = false;
+    openBookmark.disabled = false;
   } catch (error) {
     if (run !== generation) return;
     status.textContent = error.name === 'PasswordException'
