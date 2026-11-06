@@ -254,6 +254,9 @@ try {
       await canvas.waitFor({ timeout: 10000 });
       await reader.locator('#save-bookmark').waitFor({ state: 'visible' });
       assert.equal(await reader.locator('#save-bookmark').isDisabled(), false);
+      await reader.evaluate(() => { document.body.style.minHeight = '4000px'; window.scrollTo(0, 2500); });
+      const bookmarkActions = await reader.locator('.reader-actions').boundingBox();
+      assert.ok(bookmarkActions.y + bookmarkActions.height > 800, JSON.stringify(bookmarkActions));
       await reader.evaluate(() => {
         window.showSaveFilePicker = async () => ({
           name: 'example.json',

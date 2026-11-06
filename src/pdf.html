@@ -13,7 +13,7 @@
   label { display: block; font-weight: 600; margin-bottom: 5px; }
   input { max-width: 100%; }
   input::file-selector-button { background: #174b3e; color: white; border: 0; border-radius: 7px; padding: 9px 14px; margin-right: 10px; cursor: pointer; }
-  .reader-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .reader-actions { position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); z-index: 1000; display: flex; flex-wrap: wrap; gap: 8px; max-width: calc(100vw - 24px); padding: 8px; border: 1px solid #b8cbbd; border-radius: 10px; background: #f7faf5ee; box-shadow: 0 5px 20px #18352833; backdrop-filter: blur(6px); }
   .reader-actions button { border: 1px solid #b8cbbd; border-radius: 7px; padding: 8px 12px; background: #f7faf5; color: #20533e; font: inherit; cursor: pointer; }
   .reader-actions button:hover:not(:disabled) { background: #e5f0e5; } .reader-actions button:disabled { opacity: .55; cursor: not-allowed; }
   section { background: #fff; border: 1px solid #d8e1d7; border-radius: 12px; padding: 12px clamp(14px, 5vw, 36px) 20px; margin: 0 0 18px; }
@@ -31,15 +31,15 @@
   <p>Откройте документ, чтобы увидеть оригинальные страницы и текст для анализа. Щёлкните по абзацу в текстовой колонке или выделите текст мышью. Файл обрабатывается на вашем устройстве.</p>
   <label for="file">Файл PDF или DjVu</label>
   <input id="file" type="file" accept=".pdf,.djvu,.djv,application/pdf,image/vnd.djvu,image/x-djvu" disabled>
-  <div class="reader-actions" aria-label="Закладки чтения">
-    <button id="save-bookmark" type="button" disabled>Сохранить закладку</button>
-    <button id="open-bookmark" type="button" disabled>Открыть закладку</button>
-  </div>
 </header>
 <main>
   <div id="status" role="status">Выберите файл, чтобы открыть его в режиме чтения.</div>
   <article id="document" aria-label="Страницы документа"></article>
 </main>
+<div class="reader-actions" aria-label="Закладки чтения">
+  <button id="save-bookmark" type="button" disabled>Сохранить закладку</button>
+  <button id="open-bookmark" type="button" disabled>Открыть закладку</button>
+</div>
 <script src="content.js"></script>
 <script type="module" src="pdf-reader.mjs"></script>
 </html>
