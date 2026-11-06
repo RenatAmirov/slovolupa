@@ -63,17 +63,27 @@ export function createExplanationServer({ extensionId, generate }) {
       const text = await generate(prompt, AbortSignal.any([abort.signal, AbortSignal.timeout(45_000)]));
       response.end(JSON.stringify({ text }));
     } catch (error) {
-      if (!response.destroyed) response.end(JSON.stringify({ error: error.message || 'Не удалось получить ответ MiraiAPI.' }));
+      if (!response.destroyed) response.end(JSON.stringify({ error: error.message || 'Не удалось получить ответ DarkAPI.' }));
     }
   });
 }
 
-export async function generateExplanation(apiKey, prompt, signal, model = process.env.MIRAI_MODEL?.trim() || 'GPT-5.6-LUNA') {
-  const configuredTokens = Number.parseInt(process.env.MIRAI_MAX_TOKENS, 10);
+export async function generateExplanation(apiKey, prompt, signal, model = process.env.DARKAPI_MODEL?.trim(), baseUrl = process.env.DARKAPI_BASE_URL?.trim()) {
+  if (!model || !baseUrl) throw new Error('Укажите Base URL и модель из раздела «Обычный API» в DarkAPI.');
+  let endpoint;
+  try {
+    const base = new URL(baseUrl);
+    if (base.protocol !== 'https:') throw new Error('protocol');
+    base.pathname = `${base.pathname.replace(/\/$/u, '')}/chat/completions`;
+    endpoint = base.href;
+  } catch {
+    throw new Error('Base URL DarkAPI должен начинаться с https://. Скопируйте его из «Быстрого старта».');
+  }
+  const configuredTokens = Number.parseInt(process.env.DARKAPI_MAX_TOKENS, 10);
   const maxTokens = Number.isFinite(configuredTokens) ? Math.min(2500, Math.max(250, configuredTokens)) : 1200;
   let response;
   try {
-    response = await fetch('https://api.miraiapi.com/v1/chat/completions', {
+    response = await fetch(endpoint, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -88,30 +98,33 @@ export async function generateExplanation(apiKey, prompt, signal, model = proces
       signal,
     });
   } catch {
-    throw new Error('Не удалось связаться с MiraiAPI. Проверьте подключение и попробуйте снова.');
+    throw new Error('Не удалось связаться с DarkAPI. Проверьте Base URL и подключение.');
   }
-  if (response.status === 401) throw new Error('MiraiAPI отклонил ключ API. Перезапустите помощник с действующим ключом.');
-  if (response.status === 403) throw new Error(`MiraiAPI запретил запрос. Проверьте баланс и доступ ключа к модели ${model}.`);
-  if (response.status === 429) throw new Error('MiraiAPI временно ограничил запросы. Подождите немного и попробуйте снова.');
-  if (!response.ok) throw new Error(`MiraiAPI вернул ошибку ${response.status}. Проверьте доступ ключа к модели ${model}.`);
+  if (response.status === 401 || response.status === 403) throw new Error('DarkAPI отклонил ключ. Проверьте полный ключ, баланс и доступ к модели.');
+  if (response.status === 402) throw new Error('В DarkAPI недостаточно токенов. Проверьте баланс в кабинете.');
+  if (response.status === 404) throw new Error(`DarkAPI не нашёл модель ${model}. Скопируйте её точный ID из кабинета.`);
+  if (response.status === 429) throw new Error('DarkAPI временно ограничил запросы. Подождите немного и попробуйте снова.');
+  if (!response.ok) throw new Error(`DarkAPI вернул ошибку ${response.status}. Проверьте Base URL и настройки модели.`);
   const result = await response.json();
   const content = result.choices?.[0]?.message?.content;
   const text = (typeof content === 'string' ? content : Array.isArray(content)
     ? content.map((part) => part.text || part.content || '').join('\n') : '').trim();
-  if (!text) throw new Error('MiraiAPI не вернул текст объяснения. Попробуйте выделить фрагмент поменьше.');
+  if (!text) throw new Error('DarkAPI не вернул текст объяснения. Попробуйте выделить фрагмент поменьше.');
   return text;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const apiKey = process.env.MIRAI_API_KEY?.trim();
-  if (!apiKey) {
-    console.error('Задайте MIRAI_API_KEY или запустите Start-Explanation.ps1.');
+  const apiKey = process.env.DARKAPI_API_KEY?.trim();
+  const baseUrl = process.env.DARKAPI_BASE_URL?.trim();
+  const model = process.env.DARKAPI_MODEL?.trim();
+  if (!apiKey || !baseUrl || !model) {
+    console.error('Задайте DARKAPI_API_KEY, DARKAPI_BASE_URL и DARKAPI_MODEL или запустите Start-Explanation.ps1.');
     process.exitCode = 1;
   } else {
     try {
       const server = createExplanationServer({
         extensionId: process.argv[2],
-        generate: (prompt, signal) => generateExplanation(apiKey, prompt, signal),
+        generate: (prompt, signal) => generateExplanation(apiKey, prompt, signal, model, baseUrl),
       });
       server.on('error', (error) => {
         console.error(`Не удалось запустить помощник на порту ${PORT}: ${error.code || error.message}`);

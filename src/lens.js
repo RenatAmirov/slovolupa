@@ -200,7 +200,7 @@ export class Lens {
     promptField.value = prompt;
     promptField.setAttribute('aria-label', 'Промпт с выделенным текстом');
     details.append(el('summary', '', 'Показать промпт'), promptField);
-    body.append(el('p', 'hint', 'Запрос на объяснение отправляется в MiraiAPI через локальный помощник.'), result, details);
+    body.append(el('p', 'hint', 'Запрос на объяснение отправляется в DarkAPI через локальный помощник.'), result, details);
     dialog.append(header, body);
     dialog.addEventListener('close', () => {
       if (this.explanationDialog === dialog) this.explanationDialog = null;
