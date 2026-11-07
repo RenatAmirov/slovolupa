@@ -3,6 +3,8 @@ import { pathToFileURL } from 'node:url';
 
 const PORT = 4174;
 const MAX_REQUEST_BYTES = 512_000;
+const configuredTimeout = Number.parseInt(process.env.DARKAPI_TIMEOUT_MS, 10);
+const REQUEST_TIMEOUT_MS = Number.isFinite(configuredTimeout) ? Math.min(120_000, Math.max(15_000, configuredTimeout)) : 75_000;
 
 export function createExplanationServer({ extensionId, generate }) {
   if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('Укажите идентификатор Словолупы из chrome://extensions.');
@@ -60,7 +62,7 @@ export function createExplanationServer({ extensionId, generate }) {
     const abort = new AbortController();
     response.once('close', () => abort.abort());
     try {
-      const text = await generate(prompt, AbortSignal.any([abort.signal, AbortSignal.timeout(45_000)]));
+      const text = await generate(prompt, AbortSignal.any([abort.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]));
       response.end(JSON.stringify({ text }));
     } catch (error) {
       if (!response.destroyed) response.end(JSON.stringify({ error: error.message || 'Не удалось получить ответ DarkAPI.' }));
@@ -97,8 +99,12 @@ export async function generateExplanation(apiKey, prompt, signal, model = proces
       redirect: 'error',
       signal,
     });
-  } catch {
-    throw new Error('Не удалось связаться с DarkAPI. Проверьте Base URL и подключение.');
+  } catch (error) {
+    const code = signal.reason?.name || error.cause?.code || error.code || error.name;
+    console.error(`DarkAPI request failed: ${code}`);
+    if (code === 'TimeoutError') throw new Error(`DarkAPI не ответил за ${Math.round(REQUEST_TIMEOUT_MS / 1000)} сек. Выберите более быструю модель или сократите выделение.`);
+    if (code === 'AbortError') throw new Error('Запрос к DarkAPI был отменён. Попробуйте снова.');
+    throw new Error(`Не удалось связаться с DarkAPI (${code}). Проверьте подключение.`);
   }
   if (response.status === 401 || response.status === 403) throw new Error('DarkAPI отклонил ключ. Проверьте полный ключ, баланс и доступ к модели.');
   if (response.status === 402) throw new Error('В DarkAPI недостаточно токенов. Проверьте баланс в кабинете.');
