@@ -445,13 +445,9 @@ export class Lens {
       this.onWaterChange(this.highlightWater);
     });
     toggle.setAttribute('aria-pressed', String(this.highlightWater));
-    if (this.mode === 'selection') {
-      const actions = el('div', 'legend-actions');
-      actions.append(button('Объяснить как ребенку', 'explain-button', () => this.showExplanation()), toggle);
-      legend.append(actions);
-    } else {
-      legend.append(toggle);
-    }
+    const actions = el('div', 'legend-actions');
+    actions.append(button('Объяснить как ребенку', 'explain-button', () => this.showExplanation()), toggle);
+    legend.append(actions);
     const text = el('div', `text${this.highlightWater ? ' show-water' : ''}`);
     text.setAttribute('dir', 'auto');
     if (output) {

@@ -65,6 +65,7 @@ try {
     await panel.waitFor();
     assert.equal(await overlay.locator('.eyebrow').textContent(), 'Абзац');
     assert.equal(await overlay.locator('.text').textContent(), await page.locator('#russian').innerText());
+    assert.equal(await overlay.getByRole('button', { name: 'Объяснить как ребенку', exact: true }).count(), 1);
     await assertBounds();
   });
   await check('Вкладки и подсветка работают; щелчок вне окна закрывает его', async () => {
