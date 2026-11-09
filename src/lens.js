@@ -42,7 +42,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .explain-button { border-radius: 5px; background: #dcebdc; color: #20573f; padding: 4px 8px; font-size: 10px; }
 .explanation { position: fixed; inset: 10px auto auto 10px; width: calc(50vw - 20px); height: calc(100dvh - 20px); max-width: none; max-height: none; margin: 0; padding: 0; border: 1px solid #d8e1db; border-radius: 14px; background: #fbfcfa; color: #193b33; font: 15px/1.65 system-ui, sans-serif; }
 .explanation[open] { display: flex; flex-direction: column; }
-.explanation::backdrop { background: #152b24aa; }
+.explanation::backdrop { background: #e7f0e980; }
 .explanation .header { border-bottom: 1px solid #e4e9e3; }
 .explanation h2 { flex: 1; margin: 0; font-size: 18px; }
 .explanation-actions { display: flex; align-items: center; gap: 6px; } .explanation .speak-button { border: 1px solid #b8cbbd; border-radius: 6px; padding: 5px 8px; background: #edf4ed; color: #20573f; font-size: 11px; white-space: nowrap; } .explanation .speak-button[aria-pressed=true] { background: #f9e9cd; color: #805314; } .explanation .speak-button:disabled { opacity: .55; cursor: not-allowed; }
