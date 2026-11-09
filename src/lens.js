@@ -45,6 +45,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .explanation::backdrop { background: #152b24aa; }
 .explanation .header { border-bottom: 1px solid #e4e9e3; }
 .explanation h2 { flex: 1; margin: 0; font-size: 18px; }
+.explanation-actions { display: flex; align-items: center; gap: 6px; } .explanation .speak-button { border: 1px solid #b8cbbd; border-radius: 6px; padding: 5px 8px; background: #edf4ed; color: #20573f; font-size: 11px; white-space: nowrap; } .explanation .speak-button[aria-pressed=true] { background: #f9e9cd; color: #805314; } .explanation .speak-button:disabled { opacity: .55; cursor: not-allowed; }
 .explanation-body { flex: 1 1 auto; min-height: 0; padding: 16px 18px; overflow-y: scroll; overflow-x: hidden; overscroll-behavior: contain; scrollbar-color: #6d9981 #edf2ed; scrollbar-width: auto; }
 .explanation-body::-webkit-scrollbar { width: 12px; } .explanation-body::-webkit-scrollbar-track { background: #edf2ed; } .explanation-body::-webkit-scrollbar-thumb { min-height: 36px; border: 3px solid #edf2ed; border-radius: 8px; background: #6d9981; }
 .explanation-text { overflow-wrap: anywhere; }
@@ -187,8 +188,38 @@ export class Lens {
     const title = el('h2', '', 'Объяснить как ребенку');
     title.id = 'explanation-title';
     const close = button('×', 'close', () => dialog.close(), 'Закрыть объяснение');
+    const canSpeak = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+    let isSpeaking = false;
+    const speak = button('Произнести вслух', 'speak-button', () => {
+      if (!canSpeak) return;
+      if (isSpeaking) {
+        window.speechSynthesis.cancel();
+        return;
+      }
+      const spokenText = result.textContent.trim();
+      if (!spokenText || result.dataset.ready !== 'true') return;
+      const utterance = new SpeechSynthesisUtterance(spokenText);
+      utterance.lang = 'ru-RU';
+      const finish = () => {
+        isSpeaking = false;
+        speak.textContent = 'Произнести вслух';
+        speak.setAttribute('aria-pressed', 'false');
+      };
+      utterance.onend = finish;
+      utterance.onerror = finish;
+      isSpeaking = true;
+      speak.textContent = 'Остановить';
+      speak.setAttribute('aria-pressed', 'true');
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    }, 'Произнести весь текст объяснения вслух');
+    speak.setAttribute('aria-pressed', 'false');
+    speak.disabled = true;
+    if (!canSpeak) speak.title = 'Озвучка не поддерживается этим браузером';
+    const actions = el('div', 'explanation-actions');
+    actions.append(speak, close);
     const header = el('div', 'header');
-    header.append(title, close);
+    header.append(title, actions);
 
     const body = el('div', 'explanation-body');
     const result = el('div', 'explanation-text', 'Готовим объяснение…');
@@ -203,6 +234,7 @@ export class Lens {
     body.append(el('p', 'hint', 'Запрос на объяснение отправляется в DarkAPI через локальный помощник.'), result, details);
     dialog.append(header, body);
     dialog.addEventListener('close', () => {
+      if (isSpeaking) window.speechSynthesis.cancel();
       if (this.explanationDialog === dialog) this.explanationDialog = null;
       dialog.remove();
     }, { once: true });
@@ -212,7 +244,12 @@ export class Lens {
     dialog.showModal();
     close.focus();
     requestExplanation(prompt).then(
-      (text) => { if (dialog.open) renderMarkdown(result, text); },
+      (text) => {
+        if (!dialog.open) return;
+        renderMarkdown(result, text);
+        result.dataset.ready = 'true';
+        speak.disabled = !canSpeak;
+      },
       (error) => { if (dialog.open) result.textContent = error.message; },
     );
   }

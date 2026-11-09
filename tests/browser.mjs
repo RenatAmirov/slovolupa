@@ -212,6 +212,11 @@ try {
         assert.equal(await output.locator('strong').textContent(), 'Ответ для восьмого класса.');
         assert.equal(await output.locator('b').count(), 0);
         assert.match(await output.textContent(), /<b>Этот тег — текст\.<\/b>/u);
+        const speak = dialog.getByRole('button', { name: 'Произнести весь текст объяснения вслух', exact: true });
+        assert.equal(await speak.isDisabled(), false);
+        await speak.click();
+        assert.equal(await speak.textContent(), 'Остановить');
+        await speak.click();
         const dialogBox = await dialog.boundingBox();
         assert.ok(dialogBox.x >= 9 && dialogBox.x + dialogBox.width <= 640, JSON.stringify(dialogBox));
         const explanationBody = dialog.locator('.explanation-body');
