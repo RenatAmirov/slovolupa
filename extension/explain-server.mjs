@@ -1,28 +1,59 @@
 import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
 const PORT = 4174;
 const MAX_REQUEST_BYTES = 512_000;
 const configuredTimeout = Number.parseInt(process.env.DARKAPI_TIMEOUT_MS, 10);
 const REQUEST_TIMEOUT_MS = Number.isFinite(configuredTimeout) ? Math.min(120_000, Math.max(15_000, configuredTimeout)) : 75_000;
+const SPEECH_TIMEOUT_MS = 60_000;
+const SPEECH_CHUNK_LIMIT = 4_700;
+const AUDIO_TTL_MS = 5 * 60_000;
 
-export function createExplanationServer({ extensionId, generate }) {
+function splitForSpeech(text) {
+  const sentences = text.replace(/\s+/gu, ' ').trim().match(/[^.!?…]+[.!?…]*|[.!?…]+/gu) || [];
+  const chunks = [];
+  let current = '';
+  for (const sentence of sentences) {
+    if (sentence.length > SPEECH_CHUNK_LIMIT) {
+      if (current) chunks.push(current);
+      for (let offset = 0; offset < sentence.length; offset += SPEECH_CHUNK_LIMIT) chunks.push(sentence.slice(offset, offset + SPEECH_CHUNK_LIMIT));
+      current = '';
+    } else if (`${current} ${sentence}`.trim().length > SPEECH_CHUNK_LIMIT) {
+      if (current) chunks.push(current);
+      current = sentence.trim();
+    } else current = `${current} ${sentence}`.trim();
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+export function createExplanationServer({ extensionId, generate, synthesize }) {
   if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('Укажите идентификатор Словолупы из chrome://extensions.');
   const origin = `chrome-extension://${extensionId}`;
+  const audio = new Map();
   return createServer(async (request, response) => {
     const send = (status, data) => {
       response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       response.end(JSON.stringify(data));
     };
-    if (request.headers.origin !== origin || request.headers.host !== `127.0.0.1:${PORT}`) {
+    const audioToken = request.url?.match(/^\/audio\/([0-9a-f-]{36})$/u)?.[1];
+    if (request.headers.host !== `127.0.0.1:${PORT}` || (!audioToken && request.headers.origin !== origin)) {
       send(403, { error: 'Проверьте идентификатор расширения в настройках помощника.' });
       return;
     }
-    if (request.url !== '/explain') {
-      send(404, { error: 'Неизвестный адрес.' });
+    response.setHeader('Access-Control-Allow-Origin', origin);
+    if (request.method === 'GET' && audioToken) {
+      const item = audio.get(audioToken);
+      if (!item || item.expiresAt < Date.now()) {
+        audio.delete(audioToken);
+        send(404, { error: 'Аудиофайл больше недоступен.' });
+        return;
+      }
+      response.writeHead(200, { 'Content-Type': item.contentType, 'Cache-Control': 'no-store' });
+      response.end(item.body);
       return;
     }
-    response.setHeader('Access-Control-Allow-Origin', origin);
     if (request.method === 'OPTIONS') {
       response.writeHead(204, {
         'Access-Control-Allow-Methods': 'POST',
@@ -31,10 +62,10 @@ export function createExplanationServer({ extensionId, generate }) {
       return;
     }
     if (request.method !== 'POST' || request.headers['content-type'] !== 'application/json') {
-      send(415, { error: 'Ожидается запрос на объяснение текста.' });
+      send(415, { error: 'Ожидается запрос к помощнику.' });
       return;
     }
-    let prompt;
+    let body;
     try {
       const chunks = [];
       let size = 0;
@@ -47,11 +78,40 @@ export function createExplanationServer({ extensionId, generate }) {
         }
         chunks.push(chunk);
       }
-      ({ prompt } = JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     } catch {
       send(400, { error: 'Помощник получил некорректный запрос.' });
       return;
     }
+    if (request.url === '/speak') {
+      const text = body?.text;
+      if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > 120_000) {
+        send(400, { error: 'Невозможно озвучить пустой или слишком длинный текст.' });
+        return;
+      }
+      if (typeof synthesize !== 'function') {
+        send(503, { error: 'Качественная озвучка не настроена. Перезапустите Start-Explanation.ps1 и укажите ключ Yandex SpeechKit.' });
+        return;
+      }
+      try {
+        const files = await Promise.all(splitForSpeech(text).map((chunk) => synthesize(chunk, AbortSignal.timeout(SPEECH_TIMEOUT_MS))));
+        const urls = files.map(({ body: audioBody, contentType }) => {
+          const token = randomUUID();
+          audio.set(token, { body: audioBody, contentType, expiresAt: Date.now() + AUDIO_TTL_MS });
+          return `http://127.0.0.1:${PORT}/audio/${token}`;
+        });
+        for (const [token, item] of audio) if (item.expiresAt < Date.now()) audio.delete(token);
+        send(200, { urls });
+      } catch (error) {
+        send(502, { error: error.message || 'Не удалось синтезировать речь.' });
+      }
+      return;
+    }
+    if (request.url !== '/explain') {
+      send(404, { error: 'Неизвестный адрес.' });
+      return;
+    }
+    const prompt = body?.prompt;
     if (typeof prompt !== 'string' || !prompt.trim() || Buffer.byteLength(prompt) > 240_000) {
       send(400, { error: 'Выберите непустой фрагмент текста меньшего размера.' });
       return;
@@ -119,10 +179,34 @@ export async function generateExplanation(apiKey, prompt, signal, model = proces
   return text;
 }
 
+export async function synthesizeRussianSpeech(apiKey, text, signal, voice = process.env.YANDEX_SPEECHKIT_VOICE?.trim() || 'marina') {
+  if (!apiKey) throw new Error('Не задан ключ Yandex SpeechKit. Перезапустите Start-Explanation.ps1 и укажите его.');
+  const parameters = new URLSearchParams({ text, lang: 'ru-RU', voice, speed: '1.03', format: 'mp3' });
+  if (voice === 'marina') parameters.set('emotion', 'friendly');
+  let response;
+  try {
+    response = await fetch('https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize', {
+      method: 'POST',
+      headers: { Authorization: `Api-Key ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: parameters,
+      signal,
+    });
+  } catch (error) {
+    const code = signal.reason?.name || error.cause?.code || error.code || error.name;
+    if (code === 'TimeoutError') throw new Error('Yandex SpeechKit не ответил вовремя. Попробуйте ещё раз.');
+    throw new Error(`Не удалось связаться с Yandex SpeechKit (${code}). Проверьте подключение.`);
+  }
+  if (response.status === 401 || response.status === 403) throw new Error('Yandex SpeechKit отклонил ключ. Проверьте ключ и роль ai.speechkit-tts.user.');
+  if (response.status === 429) throw new Error('Yandex SpeechKit временно ограничил запросы. Попробуйте чуть позже.');
+  if (!response.ok) throw new Error(`Yandex SpeechKit вернул ошибку ${response.status}. Проверьте баланс и настройки ключа.`);
+  return { body: Buffer.from(await response.arrayBuffer()), contentType: response.headers.get('content-type') || 'audio/mpeg' };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const apiKey = process.env.DARKAPI_API_KEY?.trim();
   const baseUrl = process.env.DARKAPI_BASE_URL?.trim();
   const model = process.env.DARKAPI_MODEL?.trim();
+  const speechKey = process.env.YANDEX_SPEECHKIT_API_KEY?.trim();
   if (!apiKey || !baseUrl || !model) {
     console.error('Задайте DARKAPI_API_KEY, DARKAPI_BASE_URL и DARKAPI_MODEL или запустите Start-Explanation.ps1.');
     process.exitCode = 1;
@@ -131,6 +215,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const server = createExplanationServer({
         extensionId: process.argv[2],
         generate: (prompt, signal) => generateExplanation(apiKey, prompt, signal, model, baseUrl),
+        synthesize: speechKey ? (text, signal) => synthesizeRussianSpeech(speechKey, text, signal) : undefined,
       });
       server.on('error', (error) => {
         console.error(`Не удалось запустить помощник на порту ${PORT}: ${error.code || error.message}`);

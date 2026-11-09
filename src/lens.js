@@ -188,34 +188,54 @@ export class Lens {
     const title = el('h2', '', 'Объяснить как ребенку');
     title.id = 'explanation-title';
     const close = button('×', 'close', () => dialog.close(), 'Закрыть объяснение');
-    const canSpeak = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
     let isSpeaking = false;
+    let activeAudio;
     const speak = button('Произнести вслух', 'speak-button', () => {
-      if (!canSpeak) return;
       if (isSpeaking) {
-        window.speechSynthesis.cancel();
+        activeAudio?.pause();
+        activeAudio = undefined;
+        isSpeaking = false;
+        speak.textContent = 'Произнести вслух';
+        speak.setAttribute('aria-pressed', 'false');
+        speak.disabled = false;
         return;
       }
       const spokenText = result.textContent.trim();
       if (!spokenText || result.dataset.ready !== 'true') return;
-      const utterance = new SpeechSynthesisUtterance(spokenText);
-      utterance.lang = 'ru-RU';
       const finish = () => {
         isSpeaking = false;
+        activeAudio = undefined;
         speak.textContent = 'Произнести вслух';
         speak.setAttribute('aria-pressed', 'false');
       };
-      utterance.onend = finish;
-      utterance.onerror = finish;
       isSpeaking = true;
-      speak.textContent = 'Остановить';
+      speak.textContent = 'Готовим озвучку…';
       speak.setAttribute('aria-pressed', 'true');
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
+      speak.disabled = true;
+      chrome.runtime.sendMessage({ type: 'synthesize-speech', text: spokenText }).then((response) => {
+        if (!isSpeaking) return;
+        if (!Array.isArray(response?.urls) || !response.urls.length) throw new Error(response?.error || 'Помощник не вернул аудио.');
+        let index = 0;
+        const playNext = () => {
+          if (!isSpeaking) return;
+          const audio = new Audio(response.urls[index]);
+          activeAudio = audio;
+          audio.onended = () => { index += 1; if (index < response.urls.length) playNext(); else finish(); };
+          audio.onerror = () => { finish(); alert('Не удалось воспроизвести озвучку.'); };
+          audio.play().catch(() => { finish(); alert('Браузер не разрешил воспроизведение озвучки.'); });
+        };
+        speak.disabled = false;
+        speak.textContent = 'Остановить';
+        playNext();
+      }).catch((error) => {
+        finish();
+        speak.disabled = false;
+        alert(error?.message || 'Не удалось подготовить озвучку.');
+      });
     }, 'Произнести весь текст объяснения вслух');
     speak.setAttribute('aria-pressed', 'false');
     speak.disabled = true;
-    if (!canSpeak) speak.title = 'Озвучка не поддерживается этим браузером';
+    speak.title = 'Озвучить качественным голосом Yandex SpeechKit';
     const actions = el('div', 'explanation-actions');
     actions.append(speak, close);
     const header = el('div', 'header');
@@ -234,7 +254,7 @@ export class Lens {
     body.append(el('p', 'hint', 'Запрос на объяснение отправляется в DarkAPI через локальный помощник.'), result, details);
     dialog.append(header, body);
     dialog.addEventListener('close', () => {
-      if (isSpeaking) window.speechSynthesis.cancel();
+      if (isSpeaking) activeAudio?.pause();
       if (this.explanationDialog === dialog) this.explanationDialog = null;
       dialog.remove();
     }, { once: true });
@@ -248,7 +268,7 @@ export class Lens {
         if (!dialog.open) return;
         renderMarkdown(result, text);
         result.dataset.ready = 'true';
-        speak.disabled = !canSpeak;
+        speak.disabled = false;
       },
       (error) => { if (dialog.open) result.textContent = error.message; },
     );
