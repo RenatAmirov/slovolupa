@@ -8,23 +8,24 @@ const configuredTimeout = Number.parseInt(process.env.DARKAPI_TIMEOUT_MS, 10);
 const REQUEST_TIMEOUT_MS = Number.isFinite(configuredTimeout) ? Math.min(120_000, Math.max(15_000, configuredTimeout)) : 75_000;
 const SPEECH_TIMEOUT_MS = 60_000;
 const SPEECH_CHUNK_LIMIT = 4_700;
-const AUDIO_TTL_MS = 5 * 60_000;
+const AUDIO_TTL_MS = 30 * 60_000;
+const RETRYABLE_NETWORK_CODES = new Set(['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'ECONNRESET', 'EAI_AGAIN']);
+
+function delay(milliseconds, signal) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, milliseconds);
+    signal?.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+  });
+}
 
 function splitForSpeech(text) {
   const sentences = text.replace(/\s+/gu, ' ').trim().match(/[^.!?…]+[.!?…]*|[.!?…]+/gu) || [];
   const chunks = [];
-  let current = '';
   for (const sentence of sentences) {
     if (sentence.length > SPEECH_CHUNK_LIMIT) {
-      if (current) chunks.push(current);
       for (let offset = 0; offset < sentence.length; offset += SPEECH_CHUNK_LIMIT) chunks.push(sentence.slice(offset, offset + SPEECH_CHUNK_LIMIT));
-      current = '';
-    } else if (`${current} ${sentence}`.trim().length > SPEECH_CHUNK_LIMIT) {
-      if (current) chunks.push(current);
-      current = sentence.trim();
-    } else current = `${current} ${sentence}`.trim();
+    } else if (sentence.trim()) chunks.push(sentence.trim());
   }
-  if (current) chunks.push(current);
   return chunks;
 }
 
@@ -50,8 +51,13 @@ export function createExplanationServer({ extensionId, generate, synthesize }) {
         send(404, { error: 'Аудиофайл больше недоступен.' });
         return;
       }
-      response.writeHead(200, { 'Content-Type': item.contentType, 'Cache-Control': 'no-store' });
-      response.end(item.body);
+      try {
+        if (!item.body) Object.assign(item, await synthesize(item.text, AbortSignal.timeout(SPEECH_TIMEOUT_MS)));
+        response.writeHead(200, { 'Content-Type': item.contentType, 'Cache-Control': 'no-store' });
+        response.end(item.body);
+      } catch (error) {
+        send(502, { error: error.message || 'Не удалось синтезировать речь.' });
+      }
       return;
     }
     if (request.method === 'OPTIONS') {
@@ -94,10 +100,9 @@ export function createExplanationServer({ extensionId, generate, synthesize }) {
         return;
       }
       try {
-        const files = await Promise.all(splitForSpeech(text).map((chunk) => synthesize(chunk, AbortSignal.timeout(SPEECH_TIMEOUT_MS))));
-        const urls = files.map(({ body: audioBody, contentType }) => {
+        const urls = splitForSpeech(text).map((chunk) => {
           const token = randomUUID();
-          audio.set(token, { body: audioBody, contentType, expiresAt: Date.now() + AUDIO_TTL_MS });
+          audio.set(token, { text: chunk, expiresAt: Date.now() + AUDIO_TTL_MS });
           return `http://127.0.0.1:${PORT}/audio/${token}`;
         });
         for (const [token, item] of audio) if (item.expiresAt < Date.now()) audio.delete(token);
@@ -184,17 +189,25 @@ export async function synthesizeRussianSpeech(apiKey, text, signal, voice = proc
   const parameters = new URLSearchParams({ text, lang: 'ru-RU', voice, speed: '1.03', format: 'mp3' });
   if (voice === 'marina') parameters.set('emotion', 'friendly');
   let response;
-  try {
-    response = await fetch('https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize', {
-      method: 'POST',
-      headers: { Authorization: `Api-Key ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: parameters,
-      signal,
-    });
-  } catch (error) {
-    const code = signal.reason?.name || error.cause?.code || error.code || error.name;
-    if (code === 'TimeoutError') throw new Error('Yandex SpeechKit не ответил вовремя. Попробуйте ещё раз.');
-    throw new Error(`Не удалось связаться с Yandex SpeechKit (${code}). Проверьте подключение.`);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = await fetch('https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize', {
+        method: 'POST',
+        headers: { Authorization: `Api-Key ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: parameters,
+        signal,
+      });
+      break;
+    } catch (error) {
+      const code = signal.reason?.name || error.cause?.code || error.code || error.name;
+      if (attempt < 2 && RETRYABLE_NETWORK_CODES.has(code) && !signal.aborted) {
+        console.warn(`Yandex SpeechKit connection failed (${code}), retrying ${attempt + 1}/2…`);
+        await delay(500 * (attempt + 1), signal);
+        continue;
+      }
+      if (code === 'TimeoutError') throw new Error('Yandex SpeechKit не ответил вовремя. Попробуйте ещё раз.');
+      throw new Error(`Не удалось связаться с Yandex SpeechKit (${code}). Проверьте подключение.`);
+    }
   }
   if (response.status === 401 || response.status === 403) throw new Error('Yandex SpeechKit отклонил ключ. Проверьте ключ и роль ai.speechkit-tts.user.');
   if (response.status === 429) throw new Error('Yandex SpeechKit временно ограничил запросы. Попробуйте чуть позже.');

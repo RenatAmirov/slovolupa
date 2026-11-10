@@ -45,10 +45,12 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .explanation::backdrop { background: #e7f0e980; }
 .explanation .header { border-bottom: 1px solid #e4e9e3; }
 .explanation h2 { flex: 1; margin: 0; font-size: 18px; }
-.explanation-actions { display: flex; align-items: center; gap: 6px; } .explanation .speak-button { border: 1px solid #b8cbbd; border-radius: 6px; padding: 5px 8px; background: #edf4ed; color: #20573f; font-size: 11px; white-space: nowrap; } .explanation .speak-button[aria-pressed=true] { background: #f9e9cd; color: #805314; } .explanation .speak-button:disabled { opacity: .55; cursor: not-allowed; }
+.explanation-actions { display: flex; align-items: center; gap: 6px; } .explanation .speak-button { border: 1px solid #b8cbbd; border-radius: 6px; padding: 5px 8px; background: #edf4ed; color: #20573f; font-size: 11px; white-space: nowrap; } .explanation .speak-button[aria-pressed=true] { background: #f9e9cd; color: #805314; } .explanation .speak-button:disabled, .speech-control:disabled { opacity: .55; cursor: not-allowed; }
+.playback-controls { display: none; align-items: center; gap: 4px; margin: 0 0 9px; padding: 4px 6px; border: 1px solid #d8e5da; border-radius: 7px; background: #f3f8f3; } .playback-controls.visible { display: flex; } .speech-control { display: grid; width: 26px; height: 26px; place-items: center; border: 1px solid #b8cbbd; border-radius: 50%; padding: 0; background: #fff; color: #20573f; font: 14px/1 system-ui, sans-serif; } .speech-control:hover:not(:disabled) { background: #e3efe5; } .speech-control.stop { background: #f9e9cd; color: #805314; } .playback-controls .hint { margin: 0 0 0 3px; font-size: 10px; white-space: nowrap; }
 .explanation-body { flex: 1 1 auto; min-height: 0; padding: 16px 18px; overflow-y: scroll; overflow-x: hidden; overscroll-behavior: contain; scrollbar-color: #6d9981 #edf2ed; scrollbar-width: auto; }
 .explanation-body::-webkit-scrollbar { width: 12px; } .explanation-body::-webkit-scrollbar-track { background: #edf2ed; } .explanation-body::-webkit-scrollbar-thumb { min-height: 36px; border: 3px solid #edf2ed; border-radius: 8px; background: #6d9981; }
 .explanation-text { overflow-wrap: anywhere; }
+.explanation-text::highlight(slovolupa-current-sentence) { background: #ffd5e0; color: #193b33; }
 .explanation-text > :first-child { margin-top: 0; } .explanation-text > :last-child { margin-bottom: 0; }
 .explanation-text h1, .explanation-text h2, .explanation-text h3 { line-height: 1.25; color: #174b3e; } .explanation-text h1 { font-size: 1.45em; } .explanation-text h2 { font-size: 1.22em; } .explanation-text h3 { font-size: 1.08em; }
 .explanation-text p { margin: .75em 0; } .explanation-text ul, .explanation-text ol { margin: .7em 0; padding-left: 1.5em; } .explanation-text li + li { margin-top: .25em; }
@@ -87,7 +89,7 @@ function el(tag, className, text) {
 function button(text, className, action, label) {
   const node = el('button', className, text);
   node.type = 'button';
-  if (label) node.setAttribute('aria-label', label);
+  if (label) { node.setAttribute('aria-label', label); node.title = label; }
   node.addEventListener('click', action);
   return node;
 }
@@ -160,6 +162,29 @@ function renderMarkdown(output, markdown) {
   output.replaceChildren(fragment);
 }
 
+function splitSpeechSentences(text) {
+  return text.match(/[^.!?…]+[.!?…]*|[.!?…]+/gu)?.map((sentence) => sentence.trim()).filter(Boolean) || [];
+}
+
+function textRangeForOffsets(root, start, end) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let position = 0;
+  let startPoint;
+  let endPoint;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const nextPosition = position + node.data.length;
+    if (!startPoint && start >= position && start <= nextPosition) startPoint = [node, start - position];
+    if (!endPoint && end >= position && end <= nextPosition) endPoint = [node, end - position];
+    if (startPoint && endPoint) break;
+    position = nextPosition;
+  }
+  if (!startPoint || !endPoint) return null;
+  const range = document.createRange();
+  range.setStart(...startPoint);
+  range.setEnd(...endPoint);
+  return range;
+}
+
 export class Lens {
   constructor({ onClose, onWaterChange }) {
     this.onClose = onClose;
@@ -189,47 +214,138 @@ export class Lens {
     title.id = 'explanation-title';
     const close = button('×', 'close', () => dialog.close(), 'Закрыть объяснение');
     let isSpeaking = false;
+    let isPaused = false;
     let activeAudio;
-    const speak = button('Произнести вслух', 'speak-button', () => {
-      if (isSpeaking) {
-        activeAudio?.pause();
-        activeAudio = undefined;
-        isSpeaking = false;
-        speak.textContent = 'Произнести вслух';
-        speak.setAttribute('aria-pressed', 'false');
-        speak.disabled = false;
+    let playbackUrls = [];
+    let audioSources = [];
+    let audioRequestId = 0;
+    let sentenceIndex = 0;
+    let spokenText = '';
+    let spokenSentences = [];
+    const speechHighlightName = 'slovolupa-current-sentence';
+    const playback = el('div', 'playback-controls');
+    playback.setAttribute('aria-label', 'Управление озвучкой');
+    const speechStatus = el('span', 'hint', '');
+    const finish = () => {
+      isSpeaking = false;
+      isPaused = false;
+      activeAudio?.pause();
+      activeAudio = undefined;
+      playbackUrls = [];
+      for (const source of audioSources) if (source) URL.revokeObjectURL(source);
+      audioSources = [];
+      audioRequestId += 1;
+      sentenceIndex = 0;
+      spokenText = '';
+      spokenSentences = [];
+      globalThis.CSS?.highlights?.delete(speechHighlightName);
+      playback.classList.remove('visible');
+      speak.textContent = 'Произнести вслух';
+      speak.setAttribute('aria-pressed', 'false');
+      speak.disabled = false;
+      updateControls();
+    };
+    const updateControls = () => {
+      pause.disabled = !isSpeaking || isPaused || !activeAudio;
+      resume.disabled = !isSpeaking || !isPaused || !activeAudio;
+      stop.disabled = !isSpeaking;
+      previous.disabled = !isSpeaking || !playbackUrls.length || sentenceIndex === 0;
+      next.disabled = !isSpeaking || !playbackUrls.length || sentenceIndex >= playbackUrls.length - 1;
+      speechStatus.textContent = isSpeaking && playbackUrls.length ? `${sentenceIndex + 1} / ${playbackUrls.length}` : '';
+    };
+    const highlightCurrentSentence = () => {
+      if (!globalThis.CSS?.highlights || typeof Highlight === 'undefined') return;
+      const sentence = spokenSentences[sentenceIndex];
+      const rootText = result.textContent;
+      const rootOffset = rootText.indexOf(spokenText);
+      const before = spokenSentences.slice(0, sentenceIndex).join('');
+      const localOffset = spokenText.indexOf(sentence, Math.max(0, before.length));
+      if (!sentence || rootOffset < 0 || localOffset < 0) return;
+      const range = textRangeForOffsets(result, rootOffset + localOffset, rootOffset + localOffset + sentence.length);
+      if (range) globalThis.CSS.highlights.set(speechHighlightName, new Highlight(range));
+    };
+    const startAudio = (source, requestId) => {
+      if (!isSpeaking || requestId !== audioRequestId) return;
+      const audio = new Audio(source);
+      activeAudio = audio;
+      updateControls();
+      audio.onended = () => {
+        if (audio !== activeAudio) return;
+        if (sentenceIndex + 1 < playbackUrls.length) playSentence(sentenceIndex + 1);
+        else finish();
+      };
+      audio.onerror = () => {
+        if (audio !== activeAudio) return;
+        finish();
+        alert('Браузер не смог воспроизвести полученный аудиофайл.');
+      };
+      audio.play().catch(() => {
+        if (audio !== activeAudio) return;
+        finish();
+        alert('Браузер не разрешил воспроизведение озвучки.');
+      });
+    };
+    const playSentence = (nextIndex) => {
+      if (!isSpeaking || !playbackUrls[nextIndex]) return;
+      activeAudio?.pause();
+      activeAudio = undefined;
+      sentenceIndex = nextIndex;
+      isPaused = false;
+      highlightCurrentSentence();
+      updateControls();
+      const requestId = ++audioRequestId;
+      if (audioSources[sentenceIndex]) {
+        startAudio(audioSources[sentenceIndex], requestId);
         return;
       }
-      const spokenText = result.textContent.trim();
+      chrome.runtime.sendMessage({ type: 'fetch-speech-audio', url: playbackUrls[sentenceIndex] }).then((response) => {
+        if (!isSpeaking || requestId !== audioRequestId) return;
+        if (!response?.audio) throw new Error(response?.error || 'Помощник не вернул аудиофайл.');
+        const binary = atob(response.audio);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+        audioSources[sentenceIndex] = URL.createObjectURL(new Blob([bytes], { type: response.contentType || 'audio/mpeg' }));
+        startAudio(audioSources[sentenceIndex], requestId);
+      }).catch((error) => {
+        if (!isSpeaking || requestId !== audioRequestId) return;
+        finish();
+        alert(error?.message || 'Не удалось получить аудио для озвучки.');
+      });
+    };
+    const pause = button('⏸', 'speech-control', () => {
+      activeAudio?.pause();
+      isPaused = true;
+      updateControls();
+    }, 'Приостановить озвучку');
+    const resume = button('▶', 'speech-control', () => {
+      if (!activeAudio) return;
+      isPaused = false;
+      activeAudio.play().catch(() => { isPaused = true; });
+      updateControls();
+    }, 'Продолжить озвучку');
+    const stop = button('■', 'speech-control stop', finish, 'Остановить озвучку');
+    const previous = button('⏮', 'speech-control', () => playSentence(Math.max(0, sentenceIndex - 1)), 'Вернуться на одно предложение назад');
+    const next = button('⏭', 'speech-control', () => playSentence(Math.min(playbackUrls.length - 1, sentenceIndex + 1)), 'Перейти на одно предложение вперёд');
+    playback.append(pause, resume, stop, previous, next, speechStatus);
+    const speak = button('Произнести вслух', 'speak-button', () => {
+      spokenText = result.textContent.trim();
       if (!spokenText || result.dataset.ready !== 'true') return;
-      const finish = () => {
-        isSpeaking = false;
-        activeAudio = undefined;
-        speak.textContent = 'Произнести вслух';
-        speak.setAttribute('aria-pressed', 'false');
-      };
+      spokenSentences = splitSpeechSentences(spokenText);
+      if (!spokenSentences.length) return;
       isSpeaking = true;
+      playback.classList.add('visible');
       speak.textContent = 'Готовим озвучку…';
       speak.setAttribute('aria-pressed', 'true');
       speak.disabled = true;
+      updateControls();
       chrome.runtime.sendMessage({ type: 'synthesize-speech', text: spokenText }).then((response) => {
         if (!isSpeaking) return;
         if (!Array.isArray(response?.urls) || !response.urls.length) throw new Error(response?.error || 'Помощник не вернул аудио.');
-        let index = 0;
-        const playNext = () => {
-          if (!isSpeaking) return;
-          const audio = new Audio(response.urls[index]);
-          activeAudio = audio;
-          audio.onended = () => { index += 1; if (index < response.urls.length) playNext(); else finish(); };
-          audio.onerror = () => { finish(); alert('Не удалось воспроизвести озвучку.'); };
-          audio.play().catch(() => { finish(); alert('Браузер не разрешил воспроизведение озвучки.'); });
-        };
-        speak.disabled = false;
-        speak.textContent = 'Остановить';
-        playNext();
+        playbackUrls = response.urls;
+        speak.textContent = 'Произнести вслух';
+        playSentence(0);
       }).catch((error) => {
         finish();
-        speak.disabled = false;
         alert(error?.message || 'Не удалось подготовить озвучку.');
       });
     }, 'Произнести весь текст объяснения вслух');
@@ -251,10 +367,10 @@ export class Lens {
     promptField.value = prompt;
     promptField.setAttribute('aria-label', 'Промпт с выделенным текстом');
     details.append(el('summary', '', 'Показать промпт'), promptField);
-    body.append(el('p', 'hint', 'Запрос на объяснение отправляется в DarkAPI через локальный помощник.'), result, details);
+    body.append(el('p', 'hint', 'Запрос на объяснение отправляется в DarkAPI через локальный помощник.'), playback, result, details);
     dialog.append(header, body);
     dialog.addEventListener('close', () => {
-      if (isSpeaking) activeAudio?.pause();
+      if (isSpeaking) finish();
       if (this.explanationDialog === dialog) this.explanationDialog = null;
       dialog.remove();
     }, { once: true });
