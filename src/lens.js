@@ -262,7 +262,20 @@ export class Lens {
       const localOffset = spokenText.indexOf(sentence, Math.max(0, before.length));
       if (!sentence || rootOffset < 0 || localOffset < 0) return;
       const range = textRangeForOffsets(result, rootOffset + localOffset, rootOffset + localOffset + sentence.length);
-      if (range) globalThis.CSS.highlights.set(speechHighlightName, new Highlight(range));
+      if (!range) return;
+      globalThis.CSS.highlights.set(speechHighlightName, new Highlight(range));
+      requestAnimationFrame(() => {
+        if (!isSpeaking || sentence !== spokenSentences[sentenceIndex]) return;
+        const line = Array.from(range.getClientRects()).at(-1);
+        const viewport = body.getBoundingClientRect();
+        const safetyGap = 28;
+        if (line && line.bottom > viewport.bottom - safetyGap) {
+          body.scrollBy({
+            top: line.bottom - viewport.bottom + safetyGap,
+            behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+          });
+        }
+      });
     };
     const startAudio = (source, requestId) => {
       if (!isSpeaking || requestId !== audioRequestId) return;
@@ -327,7 +340,8 @@ export class Lens {
     const previous = button('⏮', 'speech-control', () => playSentence(Math.max(0, sentenceIndex - 1)), 'Вернуться на одно предложение назад');
     const next = button('⏭', 'speech-control', () => playSentence(Math.min(playbackUrls.length - 1, sentenceIndex + 1)), 'Перейти на одно предложение вперёд');
     playback.append(pause, resume, stop, previous, next, speechStatus);
-    const speak = button('Произнести вслух', 'speak-button', () => {
+    const startSpeaking = () => {
+      if (isSpeaking) return;
       spokenText = result.textContent.trim();
       if (!spokenText || result.dataset.ready !== 'true') return;
       spokenSentences = splitSpeechSentences(spokenText);
@@ -348,7 +362,8 @@ export class Lens {
         finish();
         alert(error?.message || 'Не удалось подготовить озвучку.');
       });
-    }, 'Произнести весь текст объяснения вслух');
+    };
+    const speak = button('Произнести вслух', 'speak-button', startSpeaking, 'Произнести весь текст объяснения вслух');
     speak.setAttribute('aria-pressed', 'false');
     speak.disabled = true;
     speak.title = 'Озвучить качественным голосом Yandex SpeechKit';
@@ -385,6 +400,7 @@ export class Lens {
         renderMarkdown(result, text);
         result.dataset.ready = 'true';
         speak.disabled = false;
+        startSpeaking();
       },
       (error) => { if (dialog.open) result.textContent = error.message; },
     );
