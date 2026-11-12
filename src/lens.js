@@ -40,7 +40,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .legend-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .legend-actions .water-toggle { margin-left: 0; }
 .explain-button { border-radius: 5px; background: #dcebdc; color: #20573f; padding: 4px 8px; font-size: 10px; }
-.explanation { position: fixed; inset: 10px auto auto 10px; width: calc(50vw - 20px); height: calc(100dvh - 20px); max-width: none; max-height: none; margin: 0; padding: 0; border: 1px solid #d8e1db; border-radius: 14px; background: #fbfcfa; color: #193b33; font: 15px/1.65 system-ui, sans-serif; }
+.explanation { position: fixed; z-index: 2; inset: 10px auto auto 10px; width: calc(50vw - 20px); height: calc(100dvh - 20px); max-width: none; max-height: none; margin: 0; padding: 0; border: 1px solid #d8e1db; border-radius: 14px; background: #fbfcfa; color: #193b33; font: 15px/1.65 system-ui, sans-serif; }
 .explanation[open] { display: flex; flex-direction: column; }
 .explanation::backdrop { background: #e7f0e980; }
 .explanation .header { border-bottom: 1px solid #e4e9e3; }
@@ -162,8 +162,16 @@ function renderMarkdown(output, markdown) {
   output.replaceChildren(fragment);
 }
 
-function splitSpeechSentences(text) {
-  return text.match(/[^.!?…]+[.!?…]*|[.!?…]+/gu)?.map((sentence) => sentence.trim()).filter(Boolean) || [];
+function speechSentenceRanges(text) {
+  const ranges = [];
+  for (const match of text.matchAll(/[^.!?…]+[.!?…]*|[.!?…]+/gu)) {
+    const source = match[0];
+    const left = source.search(/\S/u);
+    const right = source.search(/\s*$/u);
+    if (left < 0 || right <= left) continue;
+    ranges.push({ text: source.slice(left, right), start: match.index + left, end: match.index + right });
+  }
+  return ranges;
 }
 
 function textRangeForOffsets(root, start, end) {
@@ -185,6 +193,38 @@ function textRangeForOffsets(root, start, end) {
   return range;
 }
 
+function textOffsetForNode(root, target, targetOffset) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let position = 0;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node === target) return position + Math.min(targetOffset, node.data.length);
+    position += node.data.length;
+  }
+  return -1;
+}
+
+function textOffsetAtPoint(root, x, y) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let position = 0;
+  let nearest = { distance: Infinity, offset: -1 };
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    for (let index = 0; index < node.data.length; index++) {
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + 1);
+      const rect = range.getBoundingClientRect();
+      if (!rect.width && !rect.height) continue;
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return position + index;
+      const dx = Math.max(rect.left - x, 0, x - rect.right);
+      const dy = Math.max(rect.top - y, 0, y - rect.bottom);
+      const distance = dx * dx + dy * dy;
+      if (distance < nearest.distance) nearest = { distance, offset: position + index };
+    }
+    position += node.data.length;
+  }
+  return nearest.offset;
+}
+
 export class Lens {
   constructor({ onClose, onWaterChange }) {
     this.onClose = onClose;
@@ -201,11 +241,13 @@ export class Lens {
     this.shadow.append(style, this.panel, this.wordInfo);
     this.tab = 'map';
     this.visible = false;
+    this.onSpeechToggle = null;
   }
   contains(event) { return event.composedPath().includes(this.host); }
   get explanationOpen() { return Boolean(this.explanationDialog?.open); }
+  toggleSpeech() { return this.onSpeechToggle?.() || false; }
 
-  showExplanation() {
+  showExplanation(automatic = false) {
     if (this.explanationOpen) return;
     const prompt = explanationPrompt(this.result.text);
     const dialog = el('dialog', 'explanation');
@@ -220,8 +262,10 @@ export class Lens {
     let audioSources = [];
     let audioRequestId = 0;
     let sentenceIndex = 0;
+    let requestedSentenceIndex = 0;
     let spokenText = '';
     let spokenSentences = [];
+    let spokenSentenceRanges = [];
     const speechHighlightName = 'slovolupa-current-sentence';
     const playback = el('div', 'playback-controls');
     playback.setAttribute('aria-label', 'Управление озвучкой');
@@ -236,8 +280,10 @@ export class Lens {
       audioSources = [];
       audioRequestId += 1;
       sentenceIndex = 0;
+      requestedSentenceIndex = 0;
       spokenText = '';
       spokenSentences = [];
+      spokenSentenceRanges = [];
       globalThis.CSS?.highlights?.delete(speechHighlightName);
       playback.classList.remove('visible');
       speak.textContent = 'Произнести вслух';
@@ -255,17 +301,15 @@ export class Lens {
     };
     const highlightCurrentSentence = () => {
       if (!globalThis.CSS?.highlights || typeof Highlight === 'undefined') return;
-      const sentence = spokenSentences[sentenceIndex];
+      const sentence = spokenSentenceRanges[sentenceIndex];
       const rootText = result.textContent;
       const rootOffset = rootText.indexOf(spokenText);
-      const before = spokenSentences.slice(0, sentenceIndex).join('');
-      const localOffset = spokenText.indexOf(sentence, Math.max(0, before.length));
-      if (!sentence || rootOffset < 0 || localOffset < 0) return;
-      const range = textRangeForOffsets(result, rootOffset + localOffset, rootOffset + localOffset + sentence.length);
+      if (!sentence || rootOffset < 0) return;
+      const range = textRangeForOffsets(result, rootOffset + sentence.start, rootOffset + sentence.end);
       if (!range) return;
       globalThis.CSS.highlights.set(speechHighlightName, new Highlight(range));
       requestAnimationFrame(() => {
-        if (!isSpeaking || sentence !== spokenSentences[sentenceIndex]) return;
+        if (!isSpeaking || sentence !== spokenSentenceRanges[sentenceIndex]) return;
         const line = Array.from(range.getClientRects()).at(-1);
         const viewport = body.getBoundingClientRect();
         const safetyGap = 28;
@@ -325,27 +369,38 @@ export class Lens {
         alert(error?.message || 'Не удалось получить аудио для озвучки.');
       });
     };
-    const pause = button('⏸', 'speech-control', () => {
+    const pauseSpeech = () => {
       activeAudio?.pause();
       isPaused = true;
       updateControls();
-    }, 'Приостановить озвучку');
-    const resume = button('▶', 'speech-control', () => {
+    };
+    const resumeSpeech = () => {
       if (!activeAudio) return;
       isPaused = false;
       activeAudio.play().catch(() => { isPaused = true; });
       updateControls();
-    }, 'Продолжить озвучку');
+    };
+    const toggleSpeech = () => {
+      if (!isSpeaking || !activeAudio) return false;
+      if (isPaused) resumeSpeech();
+      else pauseSpeech();
+      return true;
+    };
+    this.onSpeechToggle = toggleSpeech;
+    const pause = button('⏸', 'speech-control', pauseSpeech, 'Приостановить озвучку');
+    const resume = button('▶', 'speech-control', resumeSpeech, 'Продолжить озвучку');
     const stop = button('■', 'speech-control stop', finish, 'Остановить озвучку');
     const previous = button('⏮', 'speech-control', () => playSentence(Math.max(0, sentenceIndex - 1)), 'Вернуться на одно предложение назад');
     const next = button('⏭', 'speech-control', () => playSentence(Math.min(playbackUrls.length - 1, sentenceIndex + 1)), 'Перейти на одно предложение вперёд');
     playback.append(pause, resume, stop, previous, next, speechStatus);
-    const startSpeaking = () => {
+    const startSpeaking = (startAt = 0) => {
       if (isSpeaking) return;
       spokenText = result.textContent.trim();
       if (!spokenText || result.dataset.ready !== 'true') return;
-      spokenSentences = splitSpeechSentences(spokenText);
+      spokenSentenceRanges = speechSentenceRanges(spokenText);
+      spokenSentences = spokenSentenceRanges.map((sentence) => sentence.text);
       if (!spokenSentences.length) return;
+      requestedSentenceIndex = startAt;
       isSpeaking = true;
       playback.classList.add('visible');
       speak.textContent = 'Готовим озвучку…';
@@ -357,7 +412,7 @@ export class Lens {
         if (!Array.isArray(response?.urls) || !response.urls.length) throw new Error(response?.error || 'Помощник не вернул аудио.');
         playbackUrls = response.urls;
         speak.textContent = 'Произнести вслух';
-        playSentence(0);
+        playSentence(Math.min(requestedSentenceIndex, playbackUrls.length - 1));
       }).catch((error) => {
         finish();
         alert(error?.message || 'Не удалось подготовить озвучку.');
@@ -375,6 +430,23 @@ export class Lens {
     const body = el('div', 'explanation-body');
     const result = el('div', 'explanation-text', 'Готовим объяснение…');
     result.setAttribute('role', 'status');
+    result.addEventListener('dblclick', (event) => {
+      const selection = this.shadow.getSelection?.() || getSelection();
+      const rootText = result.textContent;
+      const text = rootText.trim();
+      const rootOffset = rootText.indexOf(text);
+      let absoluteOffset = selection?.anchorNode && result.contains(selection.anchorNode)
+        ? textOffsetForNode(result, selection.anchorNode, selection.anchorOffset) : -1;
+      if (absoluteOffset < 0) absoluteOffset = textOffsetAtPoint(result, event.clientX, event.clientY);
+      const offset = absoluteOffset - rootOffset;
+      const ranges = isSpeaking ? spokenSentenceRanges : speechSentenceRanges(text);
+      const index = ranges.findIndex((sentence) => offset >= sentence.start && offset <= sentence.end);
+      if (index < 0) return;
+      event.preventDefault();
+      if (isSpeaking && playbackUrls.length) playSentence(index);
+      else if (isSpeaking) requestedSentenceIndex = index;
+      else startSpeaking(index);
+    });
     const details = el('details');
     const promptField = el('textarea');
     promptField.rows = 6;
@@ -386,14 +458,16 @@ export class Lens {
     dialog.append(header, body);
     dialog.addEventListener('close', () => {
       if (isSpeaking) finish();
+      if (this.onSpeechToggle === toggleSpeech) this.onSpeechToggle = null;
       if (this.explanationDialog === dialog) this.explanationDialog = null;
       dialog.remove();
     }, { once: true });
 
     this.explanationDialog = dialog;
     this.shadow.append(dialog);
-    dialog.showModal();
-    close.focus();
+    dialog.show();
+    if (automatic) this.shadow.activeElement?.blur();
+    else close.focus();
     requestExplanation(prompt).then(
       (text) => {
         if (!dialog.open) return;
@@ -420,6 +494,7 @@ export class Lens {
     if (!this.host.isConnected) document.documentElement.append(this.host);
     this.render();
     this.position();
+    this.showExplanation(true);
     if (this.translation) {
       const update = (message) => {
         if (!this.visible || this.result !== result) return;

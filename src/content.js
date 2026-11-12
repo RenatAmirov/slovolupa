@@ -91,10 +91,13 @@ function start() {
   }, { passive: true });
   document.addEventListener('pointercancel', () => { mouseSelection = null; });
   document.addEventListener('keydown', (event) => {
-    if (lens.explanationOpen) return;
+    if (event.code === 'Space' && !event.altKey && !event.ctrlKey && !event.metaKey && lens.toggleSpeech()) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === 'Escape' && lens.visible) { dismiss(); return; }
     if (lens.visible && !lens.contains(event)) dismiss();
-    if (lens.contains(event) && event.key === 'Tab') {
+    if (!lens.explanationOpen && lens.contains(event) && event.key === 'Tab') {
       const controls = Array.from(lens.shadow.querySelectorAll('button, [tabindex="0"]'));
       const first = controls[0], last = controls.at(-1), active = lens.shadow.activeElement;
       if (event.shiftKey && active === first) { event.preventDefault(); last.focus(); }
