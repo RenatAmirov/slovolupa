@@ -235,6 +235,7 @@ input.addEventListener('change', async () => {
       const columns = document.createElement('div');
       columns.className = 'page-columns';
       const text = document.createElement('div');
+      text.className = 'analysis-text';
       const textTitle = document.createElement('h3');
       textTitle.textContent = 'Текст для анализа';
       text.append(textTitle);
