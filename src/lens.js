@@ -242,10 +242,12 @@ export class Lens {
     this.tab = 'map';
     this.visible = false;
     this.onSpeechToggle = null;
+    this.onExplanationKey = null;
   }
   contains(event) { return event.composedPath().includes(this.host); }
   get explanationOpen() { return Boolean(this.explanationDialog?.open); }
   toggleSpeech() { return this.onSpeechToggle?.() || false; }
+  handleExplanationKey(event) { return this.onExplanationKey?.(event) || false; }
 
   showExplanation(automatic = false) {
     if (this.explanationOpen) return;
@@ -455,10 +457,35 @@ export class Lens {
     promptField.setAttribute('aria-label', 'Промпт с выделенным текстом');
     details.append(el('summary', '', 'Показать промпт'), promptField);
     body.append(el('p', 'hint', 'Запрос на объяснение отправляется в DarkAPI через локальный помощник.'), playback, result, details);
+    const goToSentence = (target) => {
+      if (result.dataset.ready !== 'true') return;
+      const ranges = isSpeaking ? spokenSentenceRanges : speechSentenceRanges(result.textContent.trim());
+      if (!ranges.length) return;
+      const index = Math.max(0, Math.min(target, ranges.length - 1));
+      if (isSpeaking && playbackUrls.length) playSentence(index);
+      else if (isSpeaking) requestedSentenceIndex = index;
+      else startSpeaking(index);
+    };
+    const explanationKey = (event) => {
+      if (!dialog.open || event.altKey || event.ctrlKey || event.metaKey) return false;
+      if (event.key === 'ArrowLeft') goToSentence(sentenceIndex - 1);
+      else if (event.key === 'ArrowRight') goToSentence(sentenceIndex + 1);
+      else if (event.key === 'Home') goToSentence(0);
+      else if (event.key === 'End') goToSentence(Number.MAX_SAFE_INTEGER);
+      else if (event.key === 'PageUp') body.scrollBy({ top: -body.clientHeight * .85, behavior: 'auto' });
+      else if (event.key === 'PageDown') body.scrollBy({ top: body.clientHeight * .85, behavior: 'auto' });
+      else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        const lineHeight = Number.parseFloat(getComputedStyle(body).lineHeight) || 25;
+        body.scrollBy({ top: event.key === 'ArrowUp' ? -lineHeight : lineHeight, behavior: 'auto' });
+      } else return false;
+      return true;
+    };
+    this.onExplanationKey = explanationKey;
     dialog.append(header, body);
     dialog.addEventListener('close', () => {
       if (isSpeaking) finish();
       if (this.onSpeechToggle === toggleSpeech) this.onSpeechToggle = null;
+      if (this.onExplanationKey === explanationKey) this.onExplanationKey = null;
       if (this.explanationDialog === dialog) this.explanationDialog = null;
       dialog.remove();
     }, { once: true });

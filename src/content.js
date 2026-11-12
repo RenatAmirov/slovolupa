@@ -91,6 +91,10 @@ function start() {
   }, { passive: true });
   document.addEventListener('pointercancel', () => { mouseSelection = null; });
   document.addEventListener('keydown', (event) => {
+    if (lens.handleExplanationKey(event)) {
+      event.preventDefault();
+      return;
+    }
     if (event.code === 'Space' && !event.altKey && !event.ctrlKey && !event.metaKey && lens.toggleSpeech()) {
       event.preventDefault();
       return;
