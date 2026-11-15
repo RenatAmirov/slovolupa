@@ -15,6 +15,10 @@ function loadMapFont() {
 }
 
 const CATEGORY_LABEL = { content: 'Значимое слово', pronoun: 'Местоимение', interjection: 'Междометие', stopword: 'Стоп-слово', short: 'Короткое слово' };
+const SPEECH_VOICES = [
+  ['marina', 'Marina'], ['filipp', 'Filipp'], ['ermil', 'Ermil'], ['jane', 'Jane'], ['omazh', 'Omazh'],
+  ['zahar', 'Zahar'], ['dasha', 'Dasha'], ['madi_ru', 'Madi'], ['saule_ru', 'Saule'],
+];
 const CSS = `
 :host { all: initial !important; position: fixed !important; left: var(--lens-x, 12px) !important; top: var(--lens-y, 12px) !important; display: block !important; z-index: 2147483647 !important; color-scheme: light !important; }
 * { box-sizing: border-box; }
@@ -46,7 +50,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .explanation .header { border-bottom: 1px solid #e4e9e3; }
 .explanation h2 { flex: 1; margin: 0; font-size: 18px; }
 .explanation-actions { display: flex; align-items: center; gap: 6px; } .explanation .speak-button { border: 1px solid #b8cbbd; border-radius: 6px; padding: 5px 8px; background: #edf4ed; color: #20573f; font-size: 11px; white-space: nowrap; } .explanation .speak-button[aria-pressed=true] { background: #f9e9cd; color: #805314; } .explanation .speak-button:disabled, .speech-control:disabled { opacity: .55; cursor: not-allowed; }
-.playback-controls { display: none; align-items: center; gap: 4px; margin: 0 0 9px; padding: 4px 6px; border: 1px solid #d8e5da; border-radius: 7px; background: #f3f8f3; } .playback-controls.visible { display: flex; } .speech-control { display: grid; width: 26px; height: 26px; place-items: center; border: 1px solid #b8cbbd; border-radius: 50%; padding: 0; background: #fff; color: #20573f; font: 14px/1 system-ui, sans-serif; } .speech-control:hover:not(:disabled) { background: #e3efe5; } .speech-control.stop { background: #f9e9cd; color: #805314; } .playback-controls .hint { margin: 0 0 0 3px; font-size: 10px; white-space: nowrap; }
+.playback-controls { display: none; align-items: center; flex-wrap: wrap; gap: 4px; margin: 0 0 9px; padding: 4px 6px; border: 1px solid #d8e5da; border-radius: 7px; background: #f3f8f3; } .playback-controls.visible { display: flex; } .speech-control { display: grid; width: 26px; height: 26px; place-items: center; border: 1px solid #b8cbbd; border-radius: 50%; padding: 0; background: #fff; color: #20573f; font: 14px/1 system-ui, sans-serif; } .speech-control:hover:not(:disabled) { background: #e3efe5; } .speech-control.stop { background: #f9e9cd; color: #805314; } .speed-controls, .voice-controls { display: flex; align-items: center; gap: 3px; margin-left: 2px; padding-left: 5px; border-left: 1px solid #d8e5da; } .speed-controls input { width: 64px; accent-color: #28654c; } .speed-value { min-width: 30px; color: #356049; font-size: 10px; font-variant-numeric: tabular-nums; } .voice-controls select { max-width: 112px; height: 26px; border: 1px solid #b8cbbd; border-radius: 5px; background: #fff; color: #20573f; font: 11px system-ui, sans-serif; } .playback-controls .hint { margin: 0 0 0 3px; font-size: 10px; white-space: nowrap; }
 .explanation-body { flex: 1 1 auto; min-height: 0; padding: 16px 18px; overflow-y: scroll; overflow-x: hidden; overscroll-behavior: contain; scrollbar-color: #6d9981 #edf2ed; scrollbar-width: auto; }
 .explanation-body::-webkit-scrollbar { width: 12px; } .explanation-body::-webkit-scrollbar-track { background: #edf2ed; } .explanation-body::-webkit-scrollbar-thumb { min-height: 36px; border: 3px solid #edf2ed; border-radius: 8px; background: #6d9981; }
 .explanation-text { overflow-wrap: anywhere; }
@@ -263,6 +267,9 @@ export class Lens {
     let playbackUrls = [];
     let audioSources = [];
     let audioRequestId = 0;
+    let speechRequestId = 0;
+    let speechSpeed = 1.7;
+    let speechVoice = 'filipp';
     let sentenceIndex = 0;
     let requestedSentenceIndex = 0;
     let spokenText = '';
@@ -281,6 +288,7 @@ export class Lens {
       for (const source of audioSources) if (source) URL.revokeObjectURL(source);
       audioSources = [];
       audioRequestId += 1;
+      speechRequestId += 1;
       sentenceIndex = 0;
       requestedSentenceIndex = 0;
       spokenText = '';
@@ -394,7 +402,45 @@ export class Lens {
     const stop = button('■', 'speech-control stop', finish, 'Остановить озвучку');
     const previous = button('⏮', 'speech-control', () => playSentence(Math.max(0, sentenceIndex - 1)), 'Вернуться на одно предложение назад');
     const next = button('⏭', 'speech-control', () => playSentence(Math.min(playbackUrls.length - 1, sentenceIndex + 1)), 'Перейти на одно предложение вперёд');
-    playback.append(pause, resume, stop, previous, next, speechStatus);
+    const speedControls = el('div', 'speed-controls');
+    speedControls.setAttribute('aria-label', 'Скорость произношения');
+    const speedDown = button('−', 'speech-control', () => changeSpeed(speechSpeed - .1), 'Уменьшить скорость на 0.1');
+    const speedSlider = el('input', '');
+    speedSlider.type = 'range';
+    speedSlider.min = '.5'; speedSlider.max = '2'; speedSlider.step = '.1'; speedSlider.value = '1.7';
+    speedSlider.setAttribute('aria-label', 'Скорость произношения');
+    speedSlider.addEventListener('input', () => changeSpeed(Number(speedSlider.value)));
+    const speedUp = button('+', 'speech-control', () => changeSpeed(speechSpeed + .1), 'Увеличить скорость на 0.1');
+    const speedValue = el('span', 'speed-value', '1.7×');
+    speedControls.append(speedDown, speedSlider, speedUp, speedValue);
+    const voiceControls = el('div', 'voice-controls');
+    voiceControls.setAttribute('aria-label', 'Голос произношения');
+    const voiceSelect = el('select', '');
+    voiceSelect.setAttribute('aria-label', 'Голос произношения');
+    for (const [value, label] of SPEECH_VOICES) {
+      const option = el('option', '', label); option.value = value;
+      voiceSelect.append(option);
+    }
+    voiceSelect.value = speechVoice;
+    voiceSelect.addEventListener('change', () => changeVoice(voiceSelect.value));
+    voiceControls.append(voiceSelect);
+    playback.append(pause, resume, stop, previous, next, speedControls, voiceControls, speechStatus);
+    const requestSpeech = (startAt) => {
+      requestedSentenceIndex = startAt;
+      const requestId = ++speechRequestId;
+      chrome.runtime.sendMessage({ type: 'synthesize-speech', text: spokenText, speed: speechSpeed, voice: speechVoice }).then((response) => {
+        if (!isSpeaking || requestId !== speechRequestId) return;
+        if (!Array.isArray(response?.urls) || !response.urls.length) throw new Error(response?.error || 'Помощник не вернул аудио.');
+        playbackUrls = response.urls;
+        speak.textContent = 'Произнести вслух';
+        speak.disabled = false;
+        playSentence(Math.min(requestedSentenceIndex, playbackUrls.length - 1));
+      }).catch((error) => {
+        if (!isSpeaking || requestId !== speechRequestId) return;
+        finish();
+        alert(error?.message || 'Не удалось подготовить озвучку.');
+      });
+    };
     const startSpeaking = (startAt = 0) => {
       if (isSpeaking) return;
       spokenText = result.textContent.trim();
@@ -402,23 +448,41 @@ export class Lens {
       spokenSentenceRanges = speechSentenceRanges(spokenText);
       spokenSentences = spokenSentenceRanges.map((sentence) => sentence.text);
       if (!spokenSentences.length) return;
-      requestedSentenceIndex = startAt;
       isSpeaking = true;
       playback.classList.add('visible');
       speak.textContent = 'Готовим озвучку…';
       speak.setAttribute('aria-pressed', 'true');
       speak.disabled = true;
       updateControls();
-      chrome.runtime.sendMessage({ type: 'synthesize-speech', text: spokenText }).then((response) => {
-        if (!isSpeaking) return;
-        if (!Array.isArray(response?.urls) || !response.urls.length) throw new Error(response?.error || 'Помощник не вернул аудио.');
-        playbackUrls = response.urls;
-        speak.textContent = 'Произнести вслух';
-        playSentence(Math.min(requestedSentenceIndex, playbackUrls.length - 1));
-      }).catch((error) => {
-        finish();
-        alert(error?.message || 'Не удалось подготовить озвучку.');
-      });
+      requestSpeech(startAt);
+    };
+    const restartSpeech = (label) => {
+      if (!isSpeaking) return;
+      const resumeAt = playbackUrls.length ? sentenceIndex : requestedSentenceIndex;
+      activeAudio?.pause();
+      activeAudio = undefined;
+      for (const source of audioSources) if (source) URL.revokeObjectURL(source);
+      audioSources = [];
+      playbackUrls = [];
+      audioRequestId += 1;
+      speak.textContent = label;
+      speak.disabled = true;
+      updateControls();
+      requestSpeech(resumeAt);
+    };
+    const changeSpeed = (value) => {
+      const nextSpeed = Math.round(Math.min(2, Math.max(.5, value)) * 10) / 10;
+      if (nextSpeed === speechSpeed) return;
+      speechSpeed = nextSpeed;
+      speedSlider.value = String(speechSpeed);
+      speedValue.textContent = `${speechSpeed.toFixed(1)}×`;
+      restartSpeech('Меняем скорость…');
+    };
+    const changeVoice = (voice) => {
+      if (!SPEECH_VOICES.some(([value]) => value === voice) || voice === speechVoice) return;
+      speechVoice = voice;
+      voiceSelect.value = speechVoice;
+      restartSpeech('Меняем голос…');
     };
     const speak = button('Произнести вслух', 'speak-button', startSpeaking, 'Произнести весь текст объяснения вслух');
     speak.setAttribute('aria-pressed', 'false');

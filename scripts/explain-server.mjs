@@ -10,6 +10,7 @@ const SPEECH_TIMEOUT_MS = 60_000;
 const SPEECH_CHUNK_LIMIT = 4_700;
 const AUDIO_TTL_MS = 30 * 60_000;
 const RETRYABLE_NETWORK_CODES = new Set(['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'ECONNRESET', 'EAI_AGAIN']);
+const RUSSIAN_VOICES = new Set(['marina', 'filipp', 'ermil', 'jane', 'omazh', 'zahar', 'dasha', 'madi_ru', 'saule_ru']);
 
 function delay(milliseconds, signal) {
   return new Promise((resolve, reject) => {
@@ -52,7 +53,7 @@ export function createExplanationServer({ extensionId, generate, synthesize }) {
         return;
       }
       try {
-        if (!item.body) Object.assign(item, await synthesize(item.text, AbortSignal.timeout(SPEECH_TIMEOUT_MS)));
+        if (!item.body) Object.assign(item, await synthesize(item.text, AbortSignal.timeout(SPEECH_TIMEOUT_MS), item.speed, item.voice));
         response.writeHead(200, { 'Content-Type': item.contentType, 'Cache-Control': 'no-store' });
         response.end(item.body);
       } catch (error) {
@@ -91,8 +92,18 @@ export function createExplanationServer({ extensionId, generate, synthesize }) {
     }
     if (request.url === '/speak') {
       const text = body?.text;
+      const speed = Number(body?.speed);
+      const voice = body?.voice;
       if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > 120_000) {
         send(400, { error: 'Невозможно озвучить пустой или слишком длинный текст.' });
+        return;
+      }
+      if (!Number.isFinite(speed) || speed < .5 || speed > 2) {
+        send(400, { error: 'Скорость произношения должна быть от 0.5 до 2.0.' });
+        return;
+      }
+      if (typeof voice !== 'string' || !RUSSIAN_VOICES.has(voice)) {
+        send(400, { error: 'Выберите голос из списка SpeechKit.' });
         return;
       }
       if (typeof synthesize !== 'function') {
@@ -102,7 +113,7 @@ export function createExplanationServer({ extensionId, generate, synthesize }) {
       try {
         const urls = splitForSpeech(text).map((chunk) => {
           const token = randomUUID();
-          audio.set(token, { text: chunk, expiresAt: Date.now() + AUDIO_TTL_MS });
+          audio.set(token, { text: chunk, speed, voice, expiresAt: Date.now() + AUDIO_TTL_MS });
           return `http://127.0.0.1:${PORT}/audio/${token}`;
         });
         for (const [token, item] of audio) if (item.expiresAt < Date.now()) audio.delete(token);
@@ -184,9 +195,10 @@ export async function generateExplanation(apiKey, prompt, signal, model = proces
   return text;
 }
 
-export async function synthesizeRussianSpeech(apiKey, text, signal, voice = process.env.YANDEX_SPEECHKIT_VOICE?.trim() || 'marina') {
+export async function synthesizeRussianSpeech(apiKey, text, signal, speed = 1.7, voice = process.env.YANDEX_SPEECHKIT_VOICE?.trim() || 'marina') {
   if (!apiKey) throw new Error('Не задан ключ Yandex SpeechKit. Перезапустите Start-Explanation.ps1 и укажите его.');
-  const parameters = new URLSearchParams({ text, lang: 'ru-RU', voice, speed: '1.03', format: 'mp3' });
+  const selectedSpeed = Number.isFinite(speed) ? Math.min(2, Math.max(.5, speed)) : 1.7;
+  const parameters = new URLSearchParams({ text, lang: 'ru-RU', voice, speed: selectedSpeed.toFixed(1), format: 'mp3' });
   if (voice === 'marina') parameters.set('emotion', 'friendly');
   let response;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -228,7 +240,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const server = createExplanationServer({
         extensionId: process.argv[2],
         generate: (prompt, signal) => generateExplanation(apiKey, prompt, signal, model, baseUrl),
-        synthesize: speechKey ? (text, signal) => synthesizeRussianSpeech(speechKey, text, signal) : undefined,
+        synthesize: speechKey ? (text, signal, speed, voice) => synthesizeRussianSpeech(speechKey, text, signal, speed, voice) : undefined,
       });
       server.on('error', (error) => {
         console.error(`Не удалось запустить помощник на порту ${PORT}: ${error.code || error.message}`);
