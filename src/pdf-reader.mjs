@@ -6,6 +6,7 @@ const status = document.getElementById('status');
 const output = document.getElementById('document');
 const saveBookmark = document.getElementById('save-bookmark');
 const openBookmark = document.getElementById('open-bookmark');
+const randomWordButton = document.getElementById('random-word');
 let generation = 0;
 let task;
 let pageObserver;
@@ -96,6 +97,55 @@ openBookmark.addEventListener('click', async () => {
     status.textContent = error instanceof SyntaxError ? 'Файл закладки содержит некорректный JSON.' : error.message || 'Не удалось открыть закладку.';
   }
 });
+
+function rangeForTextOffsets(element, start, end) {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let node, offset = 0, startNode, endNode, startOffset, endOffset;
+  while ((node = walker.nextNode())) {
+    const nextOffset = offset + node.textContent.length;
+    if (!startNode && start >= offset && start <= nextOffset) {
+      startNode = node; startOffset = start - offset;
+    }
+    if (end >= offset && end <= nextOffset) {
+      endNode = node; endOffset = end - offset;
+      break;
+    }
+    offset = nextOffset;
+  }
+  if (!startNode || !endNode) return null;
+  const range = document.createRange();
+  range.setStart(startNode, startOffset); range.setEnd(endNode, endOffset);
+  return range;
+}
+
+function jumpToRandomWord() {
+  if (!openedDocument) return;
+  const paragraphs = [...output.querySelectorAll('.analysis-text > p')].filter((paragraph) => /\p{L}/u.test(paragraph.textContent));
+  if (!paragraphs.length) {
+    status.textContent = 'В документе не найдено слов для перехода.';
+    return;
+  }
+  const paragraph = paragraphs[Math.floor(Math.random() * paragraphs.length)];
+  const words = [...paragraph.textContent.matchAll(/\p{L}+(?:[’'-]\p{L}+)*/gu)];
+  const match = words[Math.floor(Math.random() * words.length)];
+  const range = rangeForTextOffsets(paragraph, match.index, match.index + match[0].length);
+  if (!range) return;
+  paragraph.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+  requestAnimationFrame(() => {
+    const selection = getSelection();
+    selection?.removeAllRanges();
+    // This sequence mirrors a mouse double-click: the content script sees the
+    // selection on pointerup and opens the same analysis popup as for a user.
+    paragraph.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true, pointerType: 'mouse', button: 0, isPrimary: true }));
+    selection?.addRange(range);
+    paragraph.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true, pointerType: 'mouse', button: 0, isPrimary: true }));
+    paragraph.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, composed: true, button: 0, detail: 2 }));
+    const page = paragraph.closest('section')?.dataset.page;
+    status.textContent = `Случайное слово: «${match[0]}»${page ? ` · страница ${page}` : ''}.`;
+  });
+}
+
+randomWordButton.addEventListener('click', jumpToRandomWord);
 
 function pagePreview(page, number, observer, previews) {
   const preview = document.createElement('div');
@@ -207,6 +257,7 @@ input.addEventListener('change', async () => {
   openedDocument = null;
   saveBookmark.disabled = true;
   openBookmark.disabled = true;
+  randomWordButton.disabled = true;
   pageObserver?.disconnect();
   output.replaceChildren();
   let format = /\.djvu?$/i.test(file.name) ? 'DjVu' : 'PDF';
@@ -261,6 +312,7 @@ input.addEventListener('change', async () => {
     openedDocument = { file, format, pages: documentFile.numPages };
     saveBookmark.disabled = false;
     openBookmark.disabled = false;
+    randomWordButton.disabled = !pagesWithText;
   } catch (error) {
     if (run !== generation) return;
     status.textContent = error.name === 'PasswordException'

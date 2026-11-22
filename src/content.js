@@ -95,8 +95,12 @@ function start() {
       event.preventDefault();
       return;
     }
-    if (event.code === 'Space' && !event.altKey && !event.ctrlKey && !event.metaKey && lens.toggleSpeech()) {
+    // The focused speed button/slider would otherwise consume Space itself.
+    // Always reserve it for playback while the explanation window is open,
+    // including the brief interval while a changed speed is being prepared.
+    if (event.code === 'Space' && !event.altKey && !event.ctrlKey && !event.metaKey && lens.explanationOpen) {
       event.preventDefault();
+      lens.toggleSpeech();
       return;
     }
     if (event.key === 'Escape' && lens.visible) { dismiss(); return; }

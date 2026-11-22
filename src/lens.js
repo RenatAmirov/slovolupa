@@ -39,7 +39,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .tabs { padding: 0 18px; display: flex; flex-wrap: wrap; gap: 0 18px; border-bottom: 1px solid #e4e9e3; flex: 0 0 auto; } .tab { padding: 8px 0; background: transparent; font-size: 12px; border-bottom: 2px solid transparent; color: #78877d; } .tab[aria-selected=true] { border-color: #26654c; color: #20573f; font-weight: 650; }
 .tabs-bottom { border-top: 1px solid #e4e9e3; border-bottom: 0; }
 .tabs-bottom + .summary-bottom { border-top: 0; }
-.body { padding: 18px; min-height: 0; overflow: auto; overscroll-behavior: contain; flex: 1 1 auto; scrollbar-width: thin; }
+.body { position: relative; padding: 18px; min-height: 0; overflow: auto; overscroll-behavior: contain; flex: 1 1 auto; scrollbar-width: thin; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 10px; color: #75847b; margin-bottom: 14px; align-items: center; } .legend b { font-size: 14px; color: #255c43; } .water-toggle { margin-left: auto; border-radius: 5px; background: #eaf0e9; padding: 4px 8px; font-size: 10px; } .water-toggle[aria-pressed=true] { background: #f9e9cd; color: #8b5b17; }
 .legend-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .legend-actions .water-toggle { margin-left: 0; }
@@ -65,6 +65,11 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #3c8069; out
 .explanation summary { cursor: pointer; color: #20573f; }
 .explanation textarea { display: block; width: 100%; margin-top: 8px; padding: 8px; color: inherit; font: inherit; }
 .text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; color: #204b37; font-size: 16px; font-family: 'Slovolupa Map', 'Segoe UI Variable', system-ui, sans-serif; }
+.reading-ruler { position: absolute; z-index: 3; display: none; overflow: hidden; border: 1px solid #b98b52; border-radius: 3px; background: linear-gradient(100deg, #efd9ad, #e2bd80 48%, #f2dcb0); box-shadow: 0 2px 7px #5a3a1a35, inset 0 1px #fff5dc; color: #65431d; pointer-events: none; }
+.reading-ruler.visible { display: block; }
+.reading-ruler svg { display: block; width: 100%; height: 100%; }
+.reading-ruler line { stroke: #765020; stroke-width: 1; shape-rendering: crispEdges; opacity: .9; }
+.reading-ruler text { fill: #68461f; font: 10px/1 system-ui, sans-serif; font-weight: 650; user-select: none; }
 .word { border-radius: 3px; } .word:hover { background: #deebdc; } .water { color: #7e887e; } .show-water .water { background: #faecd2; color: #8e662c; }
 .word.top-frequency { font-family: Georgia, 'Times New Roman', serif; font-weight: 700; }
 .word-info { position: fixed; z-index: 1; display: none; max-width: min(260px, calc(100vw - 10px)); padding: 3px 5px; border: 1px solid #c7d6cc; border-radius: 5px; background: #f7fbf6; box-shadow: 0 3px 12px #132c2630; color: #294d3d; font: 9px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif; pointer-events: none; }
@@ -346,18 +351,19 @@ export class Lens {
         finish();
         alert('Браузер не смог воспроизвести полученный аудиофайл.');
       };
+      if (isPaused) return;
       audio.play().catch(() => {
         if (audio !== activeAudio) return;
         finish();
         alert('Браузер не разрешил воспроизведение озвучки.');
       });
     };
-    const playSentence = (nextIndex) => {
+    const playSentence = (nextIndex, preservePause = false) => {
       if (!isSpeaking || !playbackUrls[nextIndex]) return;
       activeAudio?.pause();
       activeAudio = undefined;
       sentenceIndex = nextIndex;
-      isPaused = false;
+      isPaused = preservePause;
       highlightCurrentSentence();
       updateControls();
       const requestId = ++audioRequestId;
@@ -391,7 +397,14 @@ export class Lens {
       updateControls();
     };
     const toggleSpeech = () => {
-      if (!isSpeaking || !activeAudio) return false;
+      if (!isSpeaking) return false;
+      // During a speed/voice change the next audio object may not exist yet.
+      // Remember the requested pause so it is honoured as soon as it arrives.
+      if (!activeAudio) {
+        isPaused = !isPaused;
+        updateControls();
+        return true;
+      }
       if (isPaused) resumeSpeech();
       else pauseSpeech();
       return true;
@@ -434,7 +447,7 @@ export class Lens {
         playbackUrls = response.urls;
         speak.textContent = 'Произнести вслух';
         speak.disabled = false;
-        playSentence(Math.min(requestedSentenceIndex, playbackUrls.length - 1));
+        playSentence(Math.min(requestedSentenceIndex, playbackUrls.length - 1), isPaused);
       }).catch((error) => {
         if (!isSpeaking || requestId !== speechRequestId) return;
         finish();
@@ -821,18 +834,76 @@ export class Lens {
       fragment.append(span);
     }
     text.append(fragment);
-    text.addEventListener('pointerover', (event) => {
-      const word = event.target.closest('.word');
-      if (word) this.showWordInfo(word, event);
-    });
-    text.addEventListener('pointermove', (event) => {
-      const word = event.target.closest('.word');
-      if (word) this.showWordInfo(word, event);
-    });
-    text.addEventListener('pointerout', (event) => {
-      const word = event.target.closest('.word');
-      if (word && !word.contains(event.relatedTarget)) this.hideWordInfo();
-    });
+    if (this.mode === 'selection') this.hideWordInfo();
+    else {
+      text.addEventListener('pointerover', (event) => {
+        const word = event.target.closest('.word');
+        if (word) this.showWordInfo(word, event);
+      });
+      text.addEventListener('pointermove', (event) => {
+        const word = event.target.closest('.word');
+        if (word) this.showWordInfo(word, event);
+      });
+      text.addEventListener('pointerout', (event) => {
+        const word = event.target.closest('.word');
+        if (word && !word.contains(event.relatedTarget)) this.hideWordInfo();
+      });
+    }
+    if (this.mode === 'selection') {
+      const ruler = el('div', 'reading-ruler');
+      ruler.setAttribute('aria-hidden', 'true');
+      const scale = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      ruler.append(scale);
+      body.append(ruler);
+      const drawRuler = (width, height) => {
+        scale.replaceChildren();
+        scale.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        // CSS pixels use 96 dpi, so 1 mm is 96 / 25.4 px. This keeps the
+        // centimetre and millimetre marks proportionate when the panel scales.
+        const millimetre = 96 / 25.4;
+        for (let mark = 0; mark <= Math.ceil(width / millimetre); mark++) {
+          const x = Math.round(mark * millimetre) + .5;
+          const factor = mark % 10 === 0 ? 1 : mark % 5 === 0 ? .72 : .46;
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', String(x)); line.setAttribute('x2', String(x));
+          line.setAttribute('y1', '0'); line.setAttribute('y2', String(Math.round(height * factor)));
+          scale.append(line);
+          if (mark % 10 === 0) {
+            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            label.setAttribute('x', String(x + 3)); label.setAttribute('y', String(height - 4));
+            label.textContent = String(mark / 10);
+            scale.append(label);
+          }
+        }
+      };
+      const rulerLineAt = (event) => {
+        const caret = document.caretRangeFromPoint?.(event.clientX, event.clientY);
+        const caretRect = caret && text.contains(caret.startContainer) ? Array.from(caret.getClientRects()).find((rect) => rect.height) : null;
+        if (caretRect) return caretRect;
+        const word = event.target.closest?.('.word');
+        if (!word || !text.contains(word)) return null;
+        return Array.from(word.getClientRects()).find((rect) => event.clientY >= rect.top && event.clientY <= rect.bottom) || word.getBoundingClientRect();
+      };
+      const showRuler = (event) => {
+        if (event.pointerType && event.pointerType !== 'mouse') return;
+        const line = rulerLineAt(event);
+        if (!line) { ruler.classList.remove('visible'); return; }
+        const textRect = text.getBoundingClientRect();
+        const bodyRect = body.getBoundingClientRect();
+        const lineHeight = Number.parseFloat(getComputedStyle(text).lineHeight) || line.height || 26;
+        const height = Math.max(30, Math.round(lineHeight * 2));
+        const width = Math.max(1, Math.round(textRect.width));
+        ruler.style.left = `${Math.round(textRect.left - bodyRect.left + body.scrollLeft)}px`;
+        ruler.style.top = `${Math.round(line.bottom - bodyRect.top + body.scrollTop + 3)}px`;
+        ruler.style.width = `${width}px`;
+        ruler.style.height = `${height}px`;
+        drawRuler(width, height);
+        ruler.classList.add('visible');
+      };
+      text.addEventListener('pointermove', showRuler);
+      text.addEventListener('pointerleave', () => ruler.classList.remove('visible'));
+      body.addEventListener('scroll', () => ruler.classList.remove('visible'), { passive: true });
+    }
     body.append(legend, text, el('p', 'hint', 'Наведите на слово: основа и число повторений. Служебные слова приглушены.'));
     if (output) body.append(el('p', 'hint', 'Жёлтая подсветка показывает соответствие в переводе, зелёная — в оригинале. Светло-жёлтым отмечены переводы соседних слов.'));
   }
