@@ -5,3 +5,4 @@ test-results/
 /extension/Start-Explanation.ps1
 /extension/Start-Explanation.local.ps1
 /scripts/Start-Explanation.local.ps1
+/scripts/Start-Explanation.local.example.ps1

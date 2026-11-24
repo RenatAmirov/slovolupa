@@ -3,7 +3,7 @@ import { mkdir, copyFile, readFile, writeFile, cp } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 await mkdir('extension/icons', { recursive: true });
 await build({ entryPoints: { content: 'src/content.js', popup: 'src/popup.js', background: 'src/background.js' }, outdir: 'extension', bundle: true, minify: true, target: 'chrome111', legalComments: 'eof', loader: { '.woff2': 'binary' } });
-for (const file of ['explain-server.mjs', 'Start-Explanation.ps1', 'Start-Explanation.local.example.ps1']) await copyFile(`scripts/${file}`, `extension/${file}`);
+for (const file of ['explain-server.mjs', 'Start-Explanation.ps1']) await copyFile(`scripts/${file}`, `extension/${file}`);
 await copyFile('node_modules/@fontsource-variable/manrope/LICENSE', 'extension/Manrope-LICENSE.txt');
 await copyFile('src/popup.html', 'extension/popup.html');
 await mkdir('extension/pdfjs', { recursive: true });
