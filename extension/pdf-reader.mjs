@@ -7,6 +7,7 @@ const output = document.getElementById('document');
 const saveBookmark = document.getElementById('save-bookmark');
 const openBookmark = document.getElementById('open-bookmark');
 const randomWordButton = document.getElementById('random-word');
+const pageNumberInput = document.getElementById('page-number');
 let generation = 0;
 let task;
 let pageObserver;
@@ -146,6 +147,20 @@ function jumpToRandomWord() {
 }
 
 randomWordButton.addEventListener('click', jumpToRandomWord);
+pageNumberInput.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' || !openedDocument) return;
+  event.preventDefault();
+  const page = pageNumberInput.valueAsNumber;
+  if (!Number.isInteger(page) || page < 1 || page > openedDocument.pages) {
+    pageNumberInput.setCustomValidity(`Введите целое число от 1 до ${openedDocument.pages}.`);
+    pageNumberInput.reportValidity();
+    return;
+  }
+  pageNumberInput.setCustomValidity('');
+  output.querySelector(`section[data-page="${page}"]`)?.scrollIntoView({ block: 'start', behavior: 'auto' });
+  status.textContent = `Открыта страница ${page} из ${openedDocument.pages}.`;
+});
+pageNumberInput.addEventListener('input', () => pageNumberInput.setCustomValidity(''));
 
 function pagePreview(page, number, observer, previews) {
   const preview = document.createElement('div');
@@ -258,6 +273,9 @@ input.addEventListener('change', async () => {
   saveBookmark.disabled = true;
   openBookmark.disabled = true;
   randomWordButton.disabled = true;
+  pageNumberInput.disabled = true;
+  pageNumberInput.value = '';
+  pageNumberInput.setCustomValidity('');
   pageObserver?.disconnect();
   output.replaceChildren();
   let format = /\.djvu?$/i.test(file.name) ? 'DjVu' : 'PDF';
@@ -313,6 +331,8 @@ input.addEventListener('change', async () => {
     saveBookmark.disabled = false;
     openBookmark.disabled = false;
     randomWordButton.disabled = !pagesWithText;
+    pageNumberInput.max = String(documentFile.numPages);
+    pageNumberInput.disabled = false;
   } catch (error) {
     if (run !== generation) return;
     status.textContent = error.name === 'PasswordException'
